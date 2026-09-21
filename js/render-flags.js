@@ -10,9 +10,19 @@ import { $, escHtml, plural } from './utils.js'
 const ICON = { error: '!', warn: '•', info: 'i' }
 const LEVEL = { error: 'Error', warn: 'Warning', info: 'Note' }
 
+/** The flag's own text, as a button to its target when it has one. */
+function flagText(f) {
+  if (f.target && (f.target.ids.length || f.target.kind === 'settings')) {
+    return `<button type="button" class="flag-text" data-action="show" data-kind="${f.target.kind}" data-ids="${f.target.ids.join(',')}">${escHtml(f.text)}</button>`
+  }
+  return `<span class="flag-text">${escHtml(f.text)}</span>`
+}
+const fixBtn = f => (f.fix ? `<button type="button" class="flag-fix" data-action="fix" data-fix="${f.fix.action}" data-arg="${escHtml(f.fix.arg)}">${escHtml(f.fix.label)}</button>` : '')
+
 export function renderFlags(flags) {
   const errors = flags.filter(f => f.level === 'error').length
   const warns = flags.filter(f => f.level === 'warn').length
+  renderBar(flags, errors, warns)
   $('flagCount').textContent = errors || warns
     ? [errors && plural(errors, 'error'), warns && plural(warns, 'warning')].filter(Boolean).join(' · ')
     : 'all clear'
@@ -33,12 +43,8 @@ export function renderFlags(flags) {
         <span class="flag-icon" aria-hidden="true">${ICON[f.level]}</span>
         <span class="sr-only">${LEVEL[f.level]}: </span>
         <div class="flag-body">
-          ${f.target && f.target.ids.length
-            ? `<button type="button" class="flag-text" data-action="show" data-kind="${f.target.kind}" data-ids="${f.target.ids.join(',')}">${escHtml(f.text)}</button>`
-            : f.target?.kind === 'settings'
-              ? `<button type="button" class="flag-text" data-action="show" data-kind="settings" data-ids="">${escHtml(f.text)}</button>`
-              : `<span class="flag-text">${escHtml(f.text)}</span>`}
-          <span class="flag-meta">${CATEGORIES[f.cat]}${f.fix ? ` · <button type="button" class="flag-fix" data-action="fix" data-fix="${f.fix.action}" data-arg="${escHtml(f.fix.arg)}">${escHtml(f.fix.label)}</button>` : ''}</span>
+          ${flagText(f)}
+          <span class="flag-meta">${CATEGORIES[f.cat]}${f.fix ? ` · ${fixBtn(f)}` : ''}</span>
         </div>
       </li>`).join('')
     : `<li class="flag-empty">${errors || warns ? 'Nothing in this category.' : 'Nothing missing: every deliverable is sized and staffed, and nobody is over-booked.'}</li>`
@@ -47,4 +53,18 @@ export function renderFlags(flags) {
   more.hidden = !notes.length
   more.textContent = ui.showInfo ? `Hide ${plural(notes.length, 'note')}` : `Show ${plural(notes.length, 'note')}`
   more.setAttribute('aria-expanded', String(ui.showInfo))
+}
+
+/**
+ * The one-line summary above the board. Where the flags panel sits beside the
+ * board (wide screens) CSS hides it; below 1280px the panel drops under the
+ * board, and this keeps "move a person, watch a flag go" in view.
+ */
+function renderBar(flags, errors, warns) {
+  const top = flags.find(f => f.level !== 'info')
+  $('flagBar').innerHTML = top
+    ? `<span class="fb-count fb-count--${errors ? 'error' : 'warn'}"><span aria-hidden="true">${errors ? '!' : '•'}</span> ${[errors && plural(errors, 'error'), warns && plural(warns, 'warning')].filter(Boolean).join(' · ')}</span>
+       <span class="fb-top">${flagText(top)}${top.fix ? ` ${fixBtn(top)}` : ''}</span>
+       <a class="fb-all" href="#flags">All flags</a>`
+    : '<span class="fb-count fb-count--ok"><span aria-hidden="true">✓</span> Nothing missing</span>'
 }

@@ -55,7 +55,8 @@ export function normalizeDoc(raw) {
   const s = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) }
   const settings = {
     startDate: date(s.startDate) || defaultStart(),
-    country: code(s.country),
+    // A plan saved before multi-country holidays carries one `country`.
+    countries: [...new Set((Array.isArray(raw.settings?.countries) ? raw.settings.countries : [raw.settings?.country]).map(code).filter(Boolean))].slice(0, 12),
     weeksPerSprint: num(s.weeksPerSprint, 1, 4, 2),
     daysPerWeek: num(s.daysPerWeek, 1, 7, 5),
     meetingDay: !!s.meetingDay,

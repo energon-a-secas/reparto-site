@@ -4,6 +4,11 @@
 // ghost with pointer-events:none so elementFromPoint() sees through it, and
 // the up/cancel listeners on the document so a drop outside the source
 // element still lands. Reads only the data-drag / data-drop contract.
+//
+// Touch is different: rows and chips allow vertical panning (touch-action:
+// pan-y), so a swipe over the roster scrolls the page. A drag starts on a
+// long press instead, and from then on touchmove is cancelled so the page
+// holds still under the finger. A quick tap still picks the person up.
 
 import { ui, person } from './state.js'
 import { dropPerson, pickUp } from './actions.js'
@@ -11,6 +16,7 @@ import { escHtml, initials, faceColor } from './utils.js'
 
 const THRESHOLD = 8
 const EDGE = 64          // px from the top or bottom where a drag scrolls the page
+const LONG_PRESS = 250   // ms a finger rests before a touch becomes a drag
 let drag = null
 let scrollRaf = 0
 
@@ -20,6 +26,8 @@ export function bindDnd() {
   document.addEventListener('pointerup', onUp)
   document.addEventListener('pointercancel', cancel)
   window.addEventListener('blur', cancel)
+  // Non-passive, so a touch drag in progress can stop the page from scrolling.
+  document.addEventListener('touchmove', e => { if (drag?.committed) e.preventDefault() }, { passive: false })
 }
 
 /** True for a moment after a drag ends, so the click that follows is ignored. */
@@ -31,13 +39,25 @@ function onDown(e) {
   if (e.target.closest('button, input, select, textarea, a, label')) return
   const el = e.target.closest('[data-drag="person"]')
   if (!el) return
-  drag = { el, person: el.dataset.person, from: el.dataset.from || null, x: e.clientX, y: e.clientY, committed: false, ghost: null, over: null }
+  drag = { el, person: el.dataset.person, from: el.dataset.from || null, x: e.clientX, y: e.clientY, committed: false, ghost: null, over: null, touch: e.pointerType === 'touch', timer: 0 }
+  if (drag.touch) {
+    const d = drag
+    d.timer = setTimeout(() => {
+      if (drag !== d || d.committed) return
+      start()
+      d.lastX = d.x; d.lastY = d.y
+      d.ghost.style.left = d.x + 'px'; d.ghost.style.top = d.y + 'px'
+      navigator.vibrate?.(8)
+    }, LONG_PRESS)
+  }
 }
 
 function onMove(e) {
   if (!drag) return
   if (!drag.committed) {
     if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < THRESHOLD) return
+    // A finger that moves before the long press is scrolling, not dragging.
+    if (drag.touch) { clearTimeout(drag.timer); drag = null; return }
     start()
   }
   e.preventDefault()
@@ -120,6 +140,7 @@ function cancel() {
 }
 
 function cleanup(d) {
+  clearTimeout(d.timer)
   cancelAnimationFrame(scrollRaf); scrollRaf = 0
   document.body.classList.remove('is-dragging')
   d.el?.classList.remove('is-drag-source')

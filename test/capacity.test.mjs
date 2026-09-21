@@ -41,7 +41,7 @@ test('no calendar: 2 weeks x 4 focus days x 4 sprints = 32 -> 34', () => {
 })
 
 test('Chile Q4 2026: one weekday holiday (12 Oct), two on a weekend', () => {
-  const doc = plan({ country: 'CL' }, [{}])
+  const doc = plan({ countries: ['CL'] }, [{}])
   const off = daysOffFor(doc.people[0], doc, cal.holidays)
   assert.ok(off.has('2026-10-12') && off.has('2026-10-31') && off.has('2026-11-01'))
   const a = analyze(doc, cal)
@@ -51,7 +51,7 @@ test('Chile Q4 2026: one weekday holiday (12 Oct), two on a weekend', () => {
 })
 
 test('a full vacation week costs its meeting day too: 32 - 1 - 4 = 27 -> 21', () => {
-  const doc = plan({ country: 'CL' }, [{ vacations: [{ from: '2026-10-19', to: '2026-10-23' }] }])
+  const doc = plan({ countries: ['CL'] }, [{ vacations: [{ from: '2026-10-19', to: '2026-10-23' }] }])
   const pc = personCapacity(doc.people[0], doc, cal)
   assert.equal(pc.lost.vacation, 5)
   assert.equal(pc.raw, 27)
@@ -65,17 +65,34 @@ test('team days off hit everyone, weekends cost nothing', () => {
 })
 
 test('load, sprints away and buffer scale after the calendar', () => {
-  const doc = plan({ country: 'CL', buffer: 10 }, [{ load: 50, sprintsOff: 1 }])
+  const doc = plan({ countries: ['CL'], buffer: 10 }, [{ load: 50, sprintsOff: 1 }])
   // 31 after the holiday, x 3/4 sprints, x 50%, x 90%
   assert.equal(+personCapacity(doc.people[0], doc, cal).raw.toFixed(3), +(31 * 0.75 * 0.5 * 0.9).toFixed(3))
 })
 
 test('a plan that crosses the year reads both years of holidays', () => {
-  const doc = plan({ country: 'CL', startDate: '2026-12-07' }, [{}])
+  const doc = plan({ countries: ['CL'], startDate: '2026-12-07' }, [{}])
   const w = sprintWindows(doc.settings)
   assert.equal(w.length, 4)
   const off = daysOffFor(doc.people[0], doc, cal.holidays)
   assert.ok(off.has('2026-12-08') && off.has('2027-01-01'))
+})
+
+test('each person follows their own country, the rest the team default', () => {
+  const US = JSON.parse(fs.readFileSync(new URL('../data/holidays/US.json', import.meta.url)))
+  const both = { holidays: (c, y) => (c === 'CL' ? CL.years[y] : c === 'US' ? US.years[y] : null) || null, status: () => 'ok' }
+  const doc = plan({ countries: ['CL', 'US'] }, [{}, { country: 'US' }])
+  const a = analyze(doc, both)
+  assert.equal(a.people.get('p0').raw, 31)        // Chile: 12 Oct
+  assert.equal(a.people.get('p1').raw, 29)        // US: Columbus Day, Veterans Day, Thanksgiving
+  assert.equal(a.unitRaw, 31)                     // the formula follows the default country
+})
+
+test('a plan saved with one country migrates to a list', async () => {
+  globalThis.localStorage ??= { getItem: () => null, setItem() {} }
+  const { normalizeDoc } = await import('../js/state.js')
+  const doc = normalizeDoc({ settings: { country: 'CL', startDate: '2026-10-05' }, people: [], deliverables: [] })
+  assert.deepEqual(doc.settings.countries, ['CL'])
 })
 
 test('next quarter starts on a Monday', () => {

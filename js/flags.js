@@ -59,8 +59,14 @@ export function computeFlags(doc, a = analyze(doc)) {
   for (const c of a.calendar.failed) {
     add('warn', 'data', `Could not load ${countryLabel(c)}'s public holidays, so none are taken out. Add them as team days off.`, { kind: 'settings', ids: [] })
   }
-  if (!doc.settings.country && doc.people.some(p => !p.country)) {
-    add('info', 'data', 'No public holidays are taken out: pick a country under Public holidays.', { kind: 'settings', ids: [] })
+  const countries = doc.settings.countries || []
+  const stateless = doc.people.filter(p => !p.country)
+  if (!countries.length && stateless.length) {
+    add('info', 'data', 'No public holidays are taken out: pick the team\'s countries under Public holidays.', { kind: 'settings', ids: [] })
+  } else if (countries.length > 1 && stateless.length) {
+    // With one country the default is obvious; with several it is a guess worth naming.
+    add('warn', 'data', `${stateless.map(p => nameOf.get(p.id)).join(', ')} ${stateless.length === 1 ? 'has' : 'have'} no country, so ${stateless.length === 1 ? 'follows' : 'follow'} ${countryLabel(countries[0])}'s holidays. Set it in the person's editor.`,
+      { kind: 'person', ids: stateless.map(p => p.id) })
   }
   const away = doc.people.filter(p => a.people.get(p.id).lost.vacation > 0)
   if (away.length) {

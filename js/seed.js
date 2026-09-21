@@ -3,7 +3,8 @@
 // shows up on first load: an unsized deliverable, one nobody took, one short
 // of people, one person over-booked, one open role carrying work, a 55 that
 // should be split, and a vacation that leaves Ana over-booked. Fixing them is
-// the tour. The team calendar is Chile's, the country the names suggest.
+// the tour. The team spans Chile and Mexico (Diego works from Mexico), and the
+// open role has no country yet, which is itself a flag.
 
 import { DEFAULT_SETTINGS, defaultStart } from './capacity.js'
 import { parseISO, addDays, iso } from './calendar.js'
@@ -16,14 +17,14 @@ export function examplePlan() {
   return {
     v: 1,
     title: 'Example quarter',
-    settings: { ...DEFAULT_SETTINGS, startDate: start, country: 'CL' },
+    settings: { ...DEFAULT_SETTINGS, startDate: start, countries: ['CL', 'MX'] },
     daysOff: [],
     people: [
-      { id: 'ana', name: 'Ana Rojas', role: 'Backend', load: 100, sprintsOff: 0, open: false, vacations: [{ from: iso(week3), to: iso(addDays(week3, 4)) }] },
-      { id: 'bruno', name: 'Bruno Silva', role: 'Frontend', load: 100, sprintsOff: 0, open: false },
-      { id: 'carla', name: 'Carla Méndez', role: 'Full stack', load: 100, sprintsOff: 0, open: false },
-      { id: 'diego', name: 'Diego Fuentes', role: 'Mobile', load: 100, sprintsOff: 1, open: false },
-      { id: 'elena', name: 'Elena Torres', role: 'QA, shared with Growth', load: 50, sprintsOff: 0, open: false },
+      { id: 'ana', name: 'Ana Rojas', role: 'Backend', load: 100, sprintsOff: 0, open: false, country: 'CL', vacations: [{ from: iso(week3), to: iso(addDays(week3, 4)) }] },
+      { id: 'bruno', name: 'Bruno Silva', role: 'Frontend', load: 100, sprintsOff: 0, open: false, country: 'CL' },
+      { id: 'carla', name: 'Carla Méndez', role: 'Full stack', load: 100, sprintsOff: 0, open: false, country: 'CL' },
+      { id: 'diego', name: 'Diego Fuentes', role: 'Mobile', load: 100, sprintsOff: 1, open: false, country: 'MX' },
+      { id: 'elena', name: 'Elena Torres', role: 'QA, shared with Growth', load: 50, sprintsOff: 0, open: false, country: 'CL' },
       { id: 'open-1', name: 'Open role', role: 'Backend hire', load: 100, sprintsOff: 0, open: true },
     ],
     deliverables: [

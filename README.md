@@ -37,9 +37,10 @@ work is sized on: 8 points a sprint over 4 sprints is 32, planned as 34. Then dr
 people onto deliverables and read the flags: what has no estimate, who is missing,
 who is booked past their capacity, and how many engineers the gap is worth.
 
-Public holidays for the team's country, team days off and each person's vacations
-come out of the calendar before any of that, so a week in Chile with 12 October in
-it holds three focus days, not four.
+Public holidays, team days off and each person's vacations come out of the calendar
+before any of that. A team can span several countries, and each person follows their
+own: in the same week, 12 October costs the engineer in Chile a focus day and leaves
+the one in Mexico alone.
 
 **Live:** reparto.neorgon.com
 
@@ -48,13 +49,15 @@ it holds three focus days, not four.
 ## Features
 
 - **The formula is the settings** -- weeks a sprint, working days, the meeting day toggle, points a focus day, a sprint cap, sprints in the plan (Quarter · 6 or Two months · 4), a buffer, and how capacity rounds (nearest Fibonacci, up, down or not at all), each an editable term in one visible chain
-- **Real dates** -- sprints start on the date you pick (next quarter's first Monday by default); public holidays for 207 countries (2025 to 2030) ship with the site, anyone can follow another country's calendar, and team days off apply to everyone
+- **Real dates** -- sprints start on the date you pick (next quarter's first Monday by default), and the calendar folds to one summary line once it is set
+- **Several countries, one team** -- the United States, Colombia, Chile, Peru, Argentina and Mexico are one tap each, any of 207 countries (2025 to 2030) is a pick away; each person follows their own country's holidays, anyone without one follows the team default, and a flag names who that is
 - **Vacations** -- per-person periods; a day off only costs a focus day on a working day, and a week spent entirely away costs no meeting day either
 - **Drag and drop** -- people from the roster onto deliverables, shares from one card to another, a share back to the roster to remove it; tap or Enter picks someone up for touch and keyboard, and the page scrolls when a drag nears the edge
 - **Sensible shares** -- a drop gives what the person has free, up to what the deliverable still needs; click a share to set it on the Fibonacci scale, cover the gap, or give everything free
 - **Fibonacci estimates** -- size a deliverable from the scale, or from engineers × sprints or focus days, rounded up to the next number on the scale
-- **Flags that point somewhere** -- missing estimates, deliverables nobody took, short or over-staffed work, over-booked people, open roles carrying work, a plan bigger than the team; each one jumps to its card, and several carry a one-step fix (add the person with the most room, size it, trim it, add open roles)
+- **Flags that point somewhere** -- missing estimates, people with no country, deliverables nobody took, short or over-staffed work, over-booked people, open roles carrying work, a plan bigger than the team; each one jumps to its card, and several carry a one-step fix (add the person with the most room, size it, trim it, add open roles)
 - **Totals in points and engineers** -- team capacity, demand, booked and missing, with every gap also expressed as engineers at one full plan each
+- **Works on a phone** -- the page scrolls through the roster, a long press starts a drag, a tap carries someone to a card, and a sticky line above the board keeps the top flag and its fix in view
 - **Undo, share, export** -- 40 levels of undo, a share link that carries the plan in its own URL fragment, Markdown for a doc or a Slack thread, JSON in and out
 - **Nothing leaves the page** -- the plan lives in localStorage; holidays are static files on the same origin
 

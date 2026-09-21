@@ -22,7 +22,6 @@ import { $, showToast } from './utils.js'
 export function bindEvents() {
   bindDnd()
   setupMenu('planBtn', 'planMenu')
-  setupMenu('exportBtn', 'exportMenu')
   document.addEventListener('click', onClick)
   document.addEventListener('change', onChange)
   document.addEventListener('keydown', onKey)
@@ -34,21 +33,36 @@ export function bindEvents() {
   $('importFile').addEventListener('change', e => { const f = e.target.files[0]; if (f) importFile(f); e.target.value = '' })
 }
 
-// ── Menus (.header-menu toggled here, the floorplan-site pattern) ──
+// ── Menu (.header-menu opened here, so its keys are handled here too) ──
+// It closes only itself: the header kit's own overflow panel is also a
+// .header-menu, and closing every open one shut the panel this menu lives in.
 function setupMenu(btnId, menuId) {
   const btn = $(btnId), menu = $(menuId)
-  const close = () => { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false') }
+  const items = () => [...menu.querySelectorAll('[role="menuitem"]')]
+  const close = (focusBtn = false) => {
+    if (!menu.classList.contains('open')) return
+    menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false')
+    if (focusBtn) btn.focus()
+  }
   btn.addEventListener('click', e => {
     e.stopPropagation()
     const open = !menu.classList.contains('open')
-    document.querySelectorAll('.header-menu.open').forEach(m => m.classList.remove('open'))
     menu.classList.toggle('open', open)
     btn.setAttribute('aria-expanded', String(open))
-    if (open) menu.querySelector('[role="menuitem"]')?.focus()
+    if (open) items()[0]?.focus()
   })
-  document.addEventListener('click', e => { if (!menu.contains(e.target) && e.target !== btn) close() })
+  document.addEventListener('click', e => { if (!menu.contains(e.target) && !btn.contains(e.target)) close() })
   menu.addEventListener('click', e => { if (e.target.closest('[role="menuitem"]')) close() })
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && menu.classList.contains('open')) { close(); btn.focus() } })
+  menu.addEventListener('keydown', e => {
+    const list = items(), i = list.indexOf(document.activeElement)
+    const go = n => { e.preventDefault(); list[(n + list.length) % list.length]?.focus() }
+    if (e.key === 'ArrowDown') go(i + 1)
+    else if (e.key === 'ArrowUp') go(i - 1)
+    else if (e.key === 'Home') go(0)
+    else if (e.key === 'End') go(list.length - 1)
+    else if (e.key === 'Tab') close()
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true) }
+  })
 }
 
 // ── Clicks ───────────────────────────────────────────────────
@@ -103,6 +117,11 @@ function runAction(action, el = null) {
     case 'edit-person': openPerson(id); break
     case 'remove-person': removeEditedPerson(); break
     case 'remove-day-off': snapshot(); removeDayOff(el.dataset.date); afterChange(); break
+    case 'country-toggle': {
+      const c = el.dataset.code, list = state.doc.settings.countries
+      setCountries(list.includes(c) ? list.filter(x => x !== c) : [...list, c])
+      break
+    }
     case 'estimate': togglePop(`de-${id}`, () => openEstimate(id)); break
     case 'points': togglePop(`sp-${id}-${el.dataset.person}`, () => openPoints(id, el.dataset.person)); break
     case 'unassign': {
@@ -134,10 +153,26 @@ function setAndRender(key, value) {
 }
 
 // ── Changes: settings selects, inline names ──────────────────
-const TEXT_SETTINGS = new Set(['rounding', 'startDate', 'country'])
+const TEXT_SETTINGS = new Set(['rounding', 'startDate'])
+
+/** The team's countries, the default first. Undoable like any setting. */
+function setCountries(list) {
+  const next = [...new Set(list)].slice(0, 12)
+  if (next.join() === state.doc.settings.countries.join()) return
+  snapshot(); setSetting('countries', next); afterChange()
+}
 
 function onChange(e) {
   const t = e.target
+  if (t.id === 'addCountry') {
+    if (t.value) setCountries([...state.doc.settings.countries, t.value])
+    t.value = ''
+    return
+  }
+  if (t.id === 'defaultCountry') {
+    setCountries([t.value, ...state.doc.settings.countries])
+    return
+  }
   if (t.dataset.setting) {
     const key = t.dataset.setting
     if (key === 'startDate' && !parseISO(t.value)) { renderAll(); return }   // cleared or half-typed: keep the old date

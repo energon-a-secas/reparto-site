@@ -333,6 +333,11 @@ nav {
   background: rgba(255,255,255,0.1);
   color: #fff;
 }
+.nav-link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+}
 
 /* ── Sheet (inline panel under header), not a modal ──────────
  * Use for filters and compact forms. No backdrop; page scrolls.

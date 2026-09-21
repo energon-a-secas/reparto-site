@@ -25,6 +25,13 @@ function badge(counts) {
   return `<span class="fbadge fbadge--${lvl}" title="${plural(n, 'flag')}"><span aria-hidden="true">${counts.error ? '!' : '•'}</span>${n}<span class="sr-only"> ${plural(n, 'flag')}</span></span>`
 }
 
+/** The country code beside a role, when it tells you something: a mixed team, or someone off the team's calendar. */
+function countryTag(p) {
+  const list = state.doc.settings.countries
+  if (!p.country) return list.length > 1 ? `${list[0]} (default)` : ''
+  return list.length > 1 || !list.includes(p.country) ? p.country : ''
+}
+
 // ── Roster ───────────────────────────────────────────────────
 export function renderRoster(a, flags) {
   const idx = flagIndex(flags)
@@ -39,18 +46,18 @@ export function renderRoster(a, flags) {
     const pct = pa.cap ? Math.min(100, (pa.used / pa.cap) * 100) : 0
     const band = pa.free < 0 ? 'over' : pa.free === 0 && pa.cap ? 'full' : 'free'
     const bits = [p.role && escHtml(p.role), p.load < 100 && `${p.load}%`, p.sprintsOff && plural(p.sprintsOff, 'sprint') + ' away',
-      pa.lost.vacation && `${pa.lost.vacation}d vacation`, p.country && p.country !== state.doc.settings.country && p.country].filter(Boolean).join(' · ')
+      pa.lost.vacation && `${pa.lost.vacation}d vacation`, countryTag(p)].filter(Boolean).join(' · ')
     const carried = ui.carry?.person === p.id && !ui.carry.from
     return `<li class="person person--${band}${p.open ? ' person--open' : ''}${carried ? ' is-carried' : ''}${focused(p.id) ? ' is-focus' : ''}"
         id="p-${p.id}" data-drag="person" data-person="${p.id}" data-key="p-${p.id}" tabindex="0"
         aria-label="${escHtml(nameOf(p))}${p.open ? ', open role' : ''}. ${pa.used} of ${pa.cap} points booked. Enter to pick up.">
-      <span class="face-wrap">${face(p)}${badge(idx.get(p.id))}</span>
+      ${face(p)}
       <span class="person-meta">
-        <span class="person-name">${escHtml(nameOf(p))}${p.open ? '<span class="tag">open</span>' : ''}</span>
-        <span class="person-role">${bits || '&nbsp;'}</span>
+        <span class="person-line"><span class="person-name">${escHtml(nameOf(p))}</span>${badge(idx.get(p.id))}</span>
+        <span class="person-role">${p.open ? '<span class="tag">open role</span>' : ''}${bits || (p.open ? '' : '&nbsp;')}</span>
       </span>
       <span class="person-cap" title="${pa.used} booked of ${pa.cap} (${fmt(pa.raw)} before rounding${pa.lost.holiday + pa.lost.team + pa.lost.vacation ? `, after ${pa.lost.holiday + pa.lost.team + pa.lost.vacation} days off` : ''})">
-        <b>${Math.abs(pa.free)}</b><small>${pa.free < 0 ? 'over' : 'free'} of ${pa.cap}</small>
+        <b>${Math.abs(pa.free)}</b><small>${pa.free < 0 ? `over, cap ${pa.cap}` : `free of ${pa.cap}`}</small>
       </span>
       <button type="button" class="icon-btn" data-action="edit-person" data-id="${p.id}" data-key="pe-${p.id}" aria-label="Edit ${escHtml(nameOf(p))}">${EDIT_ICON}</button>
       <span class="cap-bar" aria-hidden="true"><i style="width:${pct}%"></i></span>
@@ -107,8 +114,9 @@ export function renderBoard(a, flags) {
     const da = a.deliverables.get(d.id)
     const st = status(d, da, a)
     const name = d.name.trim() || 'Untitled deliverable'
-    const dropBtn = carry && ui.carry.from !== d.id
-      ? `<button type="button" class="drop-btn" data-action="drop" data-id="${d.id}">${ui.carry.from ? 'Move' : 'Add'} ${escHtml(nameOf(carry))} here</button>` : ''
+    const holds = carry && d.members.some(m => m.person === carry.id)
+    const dropBtn = carry && ui.carry.from !== d.id && !(holds && !ui.carry.from)
+      ? `<button type="button" class="drop-btn" data-action="drop" data-id="${d.id}" aria-label="${ui.carry.from ? `Move ${escHtml(nameOf(carry))}'s share to` : `Add ${escHtml(nameOf(carry))} to`} ${escHtml(name)}">${ui.carry.from ? 'Move' : 'Add'} ${escHtml(nameOf(carry))} here</button>` : ''
     return `<article class="deliv deliv--${st.cls}${focused(d.id) ? ' is-focus' : ''}${carry ? ' is-target' : ''}" id="d-${d.id}"
         data-drop="deliverable" data-deliv="${d.id}" aria-label="${escHtml(name)}">
       <header class="deliv-head">
@@ -126,7 +134,7 @@ export function renderBoard(a, flags) {
       ${d.members.length ? '' : '<p class="drop-hint">Drop people here</p>'}
       ${dropBtn}
       <footer class="deliv-foot">
-        <span>${d.estimate ? `${fmt(d.estimate / (a.sprint || 1))} engineer-sprints` : 'Unsized'} · ${da.got} booked</span>
+        <span>${d.estimate ? `${fmt(d.estimate / (a.sprint || 1))} engineer-sprint${d.estimate === a.sprint ? '' : 's'}` : 'Unsized'} · ${da.got} booked</span>
         <button type="button" class="icon-btn" data-action="remove-deliverable" data-id="${d.id}" aria-label="Remove ${escHtml(name)}">${TRASH_ICON}</button>
       </footer>
     </article>`

@@ -38,6 +38,7 @@ Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,f
 ## Data
 
 - `localStorage['reparto-v1']` holds `{ v, doc, savedAt }`. `doc` is `{ title, settings, daysOff, people, deliverables }`; a share is `deliverables[].members[] = { person, points }`.
+- `settings.countries` is the team's list of ISO codes, the default first; `people[].country` overrides it per person. A plan saved with the older single `settings.country` migrates in `normalizeDoc`.
 - A share link is `#p=` + base64url(JSON of `doc`). The fragment never reaches a server; `loadFromHash()` swaps it in through `resetTo()`, so the visitor's own plan is one undo away, then clears the hash.
 - `data/holidays/<CC>.json` is `{ country, name, source, years: { 2026: [[iso, englishName, localName?], ...] } }`, public nationwide holidays only, 2025 to 2030. `index.json` lists the countries.
 
@@ -45,6 +46,9 @@ Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,f
 
 - **Never call a holiday API.** Nager.Date's robots.txt disallows `/api/v`, which is why the data is baked. `tools/build-holidays.cjs` generates it from the `date-holidays` package; `make holidays` installs that package under `$TMPDIR` because `npm install` inside a workspace member prunes the monorepo root's `node_modules`. Past 2030 the files return nothing: extend `YEARS` and rerun.
 - **Pass `cal` to every `analyze()`.** The default is `NO_CAL`, so a call that forgets it quietly plans with no holidays. Grep `analyze(` when adding one.
+- **Holidays are per person, never the union of the team's countries.** `daysOffFor()` takes the person's own country, else `settings.countries[0]`. Unioning them would take US Thanksgiving off a Chilean engineer. With two or more countries, anyone without one raises a flag instead of being guessed silently.
+- **The Plan menu must close only itself.** The header kit's `⋯` overflow panel is also a `.header-menu`; the floorplan pattern of closing every `.header-menu.open` shut the panel the moment a menu inside it opened, and a dropdown nested in that panel is clipped by its scroll box anyway. So there is one menu, `data-keep-mobile` on its wrapper, and Undo/Redo are what fold away.
+- **Touch drags on a long press.** Rows and chips are `touch-action: pan-y` so a swipe scrolls the page; `dnd.js` starts a touch drag after 250ms still, then cancels `touchmove` (a non-passive listener) so the page holds. `touch-action: none` made the roster a dead zone for scrolling.
 - **Rounding is per person and the jumps are big.** Nearest Fibonacci turns 27 into 21 and 28 into 34, so one vacation week can drop someone 13 points. That is the model the brief asked for (32 -> 34); raw and planned are always shown side by side. Tests pin the boundary.
 - **The sprint cap is a ceiling** (`min(cap, focus days x points)`), not an override: a cap above what the focus days give changes nothing, and a flag says so.
 - **A fully away week costs no meeting day.** The meeting day comes out of each week that still has a working day; a day off on a weekend costs nothing.

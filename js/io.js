@@ -62,7 +62,7 @@ export function toMarkdown(doc = state.doc) {
     '',
     `**One engineer:** ${s.weeksPerSprint}-week sprints × ${a.focus} focus days a week × ${s.pointsPerDay} pt = ${a.sprint} pts a sprint; × ${s.sprints} sprints = ${a.base}${a.offPts ? ` − ${a.offPts} for ${plural(a.offDays, 'day')} off` : ''}${s.buffer ? `, ${s.buffer}% buffer` : ''} = ${+a.unitRaw.toFixed(1)}, planned as **${a.unit}** (${ROUNDING[s.rounding]}).`,
     '',
-    `**Calendar:** starts ${fmtDay(s.startDate, true)}${range ? `, ends ${fmtDay(range.last, true)}` : ''} · public holidays: ${s.country ? countryName(s.country) : 'none'}${doc.daysOff.length ? ` · team days off: ${doc.daysOff.map(t => `${fmtDay(t.date)} ${t.label}`).join(', ')}` : ''}`,
+    `**Calendar:** starts ${fmtDay(s.startDate, true)}${range ? `, ends ${fmtDay(range.last, true)}` : ''} · public holidays: ${s.countries.length ? s.countries.map(countryName).join(', ') + ` (default ${countryName(s.countries[0])})` : 'none'}${doc.daysOff.length ? ` · team days off: ${doc.daysOff.map(t => `${fmtDay(t.date)} ${t.label}`).join(', ')}` : ''}`,
     '',
     `**Team:** ${a.capacity} pts capacity · ${a.demand} pts demand · ${a.allocated} booked · ${a.shortfall} short`,
     '',
@@ -78,12 +78,13 @@ export function toMarkdown(doc = state.doc) {
     '',
     '## People',
     '',
-    '| Person | Role | Days off | Capacity | Booked | Free |',
-    '|---|---|---|---:|---:|---:|',
+    '| Person | Role | Country | Days off | Capacity | Booked | Free |',
+    '|---|---|---|---|---:|---:|---:|',
     ...doc.people.map(p => {
       const pa = a.people.get(p.id)
       const off = [pa.lost.holiday && `${pa.lost.holiday} holiday`, pa.lost.team && `${pa.lost.team} team`, pa.lost.vacation && `${pa.lost.vacation} vacation`, pa.away && `${plural(pa.away, 'sprint')} away`].filter(Boolean).join(', ') || 'none'
-      return `| ${cell(p.name || 'Unnamed')}${p.open ? ' (open role)' : ''} | ${cell(p.role) || 'none'} | ${off} | ${pa.cap} | ${pa.used} | ${pa.free} |`
+      const country = p.country ? countryName(p.country) : s.countries.length ? `${countryName(s.countries[0])} (default)` : 'none'
+      return `| ${cell(p.name || 'Unnamed')}${p.open ? ' (open role)' : ''} | ${cell(p.role) || 'none'} | ${country} | ${off} | ${pa.cap} | ${pa.used} | ${pa.free} |`
     }),
   ]
   const flags = computeFlags(doc, a)

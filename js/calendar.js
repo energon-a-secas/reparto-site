@@ -45,14 +45,16 @@ export function planRange(s) {
 
 /**
  * Every day off that touches this person, keyed by ISO date. Public
- * holidays follow the person's country, or the team's when they have none.
+ * holidays follow the person's own country, or the team's default (the
+ * first of settings.countries) when they have none. Never the union: a team
+ * across Chile and the US does not lose both countries' holidays.
  * `holidays(country, year)` returns [[iso, name, localName?], ...] or null.
  */
 export function daysOffFor(person, doc, holidays) {
   const s = doc.settings, range = planRange(s)
   const off = new Map()
   if (!range) return off
-  const country = person.country || s.country
+  const country = person.country || s.countries?.[0] || ''
   if (country) {
     for (let y = range.from.getUTCFullYear(); y <= range.last.getUTCFullYear(); y++) {
       for (const [date, name, local] of holidays(country, y) || []) off.set(date, { kind: 'holiday', label: local || name })

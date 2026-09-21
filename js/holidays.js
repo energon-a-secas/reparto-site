@@ -45,7 +45,12 @@ export async function loadIndex() {
   return index
 }
 export const countries = () => index || []
+
+/** Pinned first in every picker, in this order: the teams Reparto is planned for. */
+export const MAIN = ['US', 'CO', 'CL', 'PE', 'AR', 'MX']
+const SHORT = { US: 'United States', GB: 'United Kingdom' }
+
 export function countryName(code) {
   if (!code) return ''
-  return countries().find(c => c.code === code)?.name || code
+  return SHORT[code] || countries().find(c => c.code === code)?.name || code
 }

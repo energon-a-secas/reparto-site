@@ -9,7 +9,7 @@ import { computeFlags, engineers } from './flags.js'
 import { renderRoster, renderBoard } from './render-board.js'
 import { renderFlags } from './render-flags.js'
 import { renderCalendar } from './render-calendar.js'
-import { cal, ensureHolidays } from './holidays.js'
+import { cal, ensureHolidays, countryName } from './holidays.js'
 import { $, escHtml, plural } from './utils.js'
 
 export function afterChange() {
@@ -64,7 +64,7 @@ function renderCalc(a) {
   const delta = Math.round(a.unit - a.unitRaw)
   const rounded = delta !== 0
 
-  $('calcChain').innerHTML = [
+  const parts = [
     term({ value: sel('weeksPerSprint', [1, 2, 3, 4], s.weeksPerSprint, 'Weeks per sprint'), label: s.weeksPerSprint === 1 ? 'week a sprint' : 'weeks a sprint' }),
     op('×'),
     term({
@@ -85,7 +85,8 @@ function renderCalc(a) {
     op('×'),
     term({ value: sel('sprints', range(1, 13), s.sprints, 'Sprints in this plan'), label: s.sprints === 1 ? 'sprint' : 'sprints', sub: presets }),
     op('−'),
-    term({ value: `<span class="term-num">${fmt(a.offPts)}</span>`, label: `pts for ${plural(a.offDays, 'day')} off`, sub: '<span class="term-note">holidays, team days</span>' }),
+    term({ value: `<span class="term-num">${fmt(a.offPts)}</span>`, label: `pts for ${plural(a.offDays, 'day')} off`,
+      sub: `<span class="term-note">${s.countries.length ? `${escHtml(countryName(s.countries[0]))} holidays` : 'no holidays'}, team days</span>` }),
     op('−'),
     term({ value: sel('buffer', [0, 10, 15, 20, 25, 30], s.buffer, 'Buffer held back', v => `${v}%`), label: 'buffer' }),
     op('='),
@@ -97,7 +98,11 @@ function renderCalc(a) {
       sub: sel('rounding', Object.keys(ROUNDING), s.rounding, 'Rounding', v => ROUNDING[v]),
       cls: 'term--final',
     }),
-  ].join('')
+  ]
+  // An operator travels with the term after it, so a wrapped line never ends on "×".
+  let html = parts[0]
+  for (let i = 1; i < parts.length; i += 2) html += `<span class="chain-pair">${parts[i]}${parts[i + 1]}</span>`
+  $('calcChain').innerHTML = html
 
   $('calcLead').innerHTML = rounded
     ? `Change any term and every share, card and flag below follows. Rounding ${delta > 0 ? 'adds' : 'takes'} <strong>${Math.abs(delta)}</strong> per full-time engineer.`

@@ -22,7 +22,7 @@ const FIB = (() => {
 
 export const DEFAULT_SETTINGS = Object.freeze({
   startDate: '',        // ISO Monday the first sprint starts; '' = next quarter's first Monday
-  country: '',          // ISO 3166 code whose public holidays count; '' = none
+  countries: [],        // ISO 3166 codes the team spans; the first is the default for anyone without one
   weeksPerSprint: 2,
   daysPerWeek: 5,
   meetingDay: true,     // one day a week goes to meetings and does not count
@@ -165,7 +165,7 @@ export function analyze(doc, cal = NO_CAL) {
 
 /** Which holiday calendars the plan needs, and whether each one arrived. */
 function calendarStatus(doc, cal) {
-  const codes = new Set([doc.settings.country, ...doc.people.map(p => p.country)].filter(Boolean))
+  const codes = new Set([...(doc.settings.countries || []), ...doc.people.map(p => p.country)].filter(Boolean))
   const out = { needed: [...codes], failed: [], loading: [] }
   for (const c of codes) {
     const st = cal.status(c)

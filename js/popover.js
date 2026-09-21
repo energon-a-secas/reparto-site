@@ -126,8 +126,9 @@ export function openPoints(delivId, personId) {
   const pa = a.people.get(personId), da = a.deliverables.get(delivId)
   const opts = [1, 2, 3, 5, 8, 13, 21, 34, 55]
   const quick = []
-  if (da.gap > 0) quick.push(`<button type="button" class="chip-btn" data-set="${m.points + da.gap}">Cover the gap: ${m.points + da.gap}</button>`)
-  if (pa.free > 0) quick.push(`<button type="button" class="chip-btn" data-set="${m.points + pa.free}">Everything free: ${m.points + pa.free}</button>`)
+  // Only offer what the person has: a share that covers the gap by over-booking them is not a fix.
+  if (da.gap > 0 && pa.free > 0) quick.push(`<button type="button" class="chip-btn" data-set="${m.points + Math.min(da.gap, pa.free)}">${pa.free >= da.gap ? 'Cover the gap' : 'Cover what they can'}: ${m.points + Math.min(da.gap, pa.free)}</button>`)
+  if (pa.free > 0 && pa.free !== da.gap) quick.push(`<button type="button" class="chip-btn" data-set="${m.points + pa.free}">Everything free: ${m.points + pa.free}</button>`)
   const pop = open(`sp-${delivId}-${personId}`, `${head(`${p.name.trim() || 'Unnamed'} on ${d.name.trim() || 'this deliverable'}`)}
     <div class="scale" role="group" aria-label="Points">${opts.map(v =>
       `<button type="button" class="scale-btn" data-set="${v}" aria-pressed="${m.points === v}">${v}</button>`).join('')}</div>

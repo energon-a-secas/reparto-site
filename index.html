@@ -82,24 +82,22 @@
 
     <div class="header-right">
       <div class="header-actions">
-        <button type="button" class="nav-link" id="undoBtn" data-action="undo" title="Undo (Ctrl+Z)" data-keep-mobile disabled>Undo</button>
+        <button type="button" class="nav-link" id="undoBtn" data-action="undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
         <button type="button" class="nav-link" id="redoBtn" data-action="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
-        <div class="menu-wrap">
+        <!-- One menu for everything plan-wide. It stays in the header on phones
+             (data-keep-mobile): a dropdown inside the kit's overflow panel is clipped
+             by the panel's own scroll box. -->
+        <div class="menu-wrap" data-keep-mobile>
           <button type="button" class="nav-link" id="planBtn" aria-haspopup="menu" aria-expanded="false">Plan ▾</button>
-          <div class="header-menu" id="planMenu" role="menu">
-            <button type="button" role="menuitem" data-action="example">Load the example (6 people, 7 deliverables)</button>
-            <button type="button" role="menuitem" data-action="blank">Start a blank plan</button>
-            <button type="button" role="menuitem" data-action="import">Import a JSON plan…</button>
-            <button type="button" role="menuitem" data-action="help">How the numbers work</button>
-          </div>
-        </div>
-        <div class="menu-wrap">
-          <button type="button" class="nav-link" id="exportBtn" aria-haspopup="menu" aria-expanded="false">Export ▾</button>
-          <div class="header-menu" id="exportMenu" role="menu">
+          <div class="header-menu" id="planMenu" role="menu" aria-label="Plan">
             <button type="button" role="menuitem" data-export="link">Copy share link</button>
             <button type="button" role="menuitem" data-export="md-copy">Copy as Markdown</button>
             <button type="button" role="menuitem" data-export="md">Download Markdown</button>
             <button type="button" role="menuitem" data-export="json">Download JSON</button>
+            <button type="button" role="menuitem" data-action="import">Import a JSON plan…</button>
+            <button type="button" role="menuitem" data-action="example">Load the example</button>
+            <button type="button" role="menuitem" data-action="blank">Start a blank plan</button>
+            <button type="button" role="menuitem" data-action="help">How the numbers work</button>
           </div>
         </div>
       </div>
@@ -129,14 +127,22 @@
         <div class="calc-chain" id="calcChain"></div>
         <!-- The calendar: the controls and the add form are static so a half-typed
              date survives a repaint; js/render-calendar.js fills the rest. -->
-        <div class="cal" id="cal">
+        <details class="cal" id="cal">
+          <summary class="cal-summary"><span class="cal-summary-label">Calendar</span> <span id="calSummary"></span></summary>
           <div class="cal-controls">
             <label class="cal-field">Starts
               <input type="date" class="field field--date" id="startDate" data-setting="startDate" required>
             </label>
-            <label class="cal-field">Public holidays
-              <select class="field field--country" id="teamCountry" data-setting="country"></select>
-            </label>
+            <div class="cal-field cal-field--countries">
+              <span id="countriesLabel">Public holidays: the team's countries</span>
+              <div class="country-picks" id="countryPicks" role="group" aria-labelledby="countriesLabel"></div>
+              <div class="country-more">
+                <select class="field field--country" id="addCountry" aria-label="Add another country"></select>
+                <label class="country-default" id="defaultWrap" hidden>No country set follows
+                  <select class="field field--country" id="defaultCountry"></select>
+                </label>
+              </div>
+            </div>
             <p class="cal-range" id="calRange"></p>
           </div>
           <ol class="sprint-strip" id="sprintStrip" aria-label="Sprint dates"></ol>
@@ -149,7 +155,7 @@
               <button type="submit" class="btn btn--secondary btn--sm">Add team day off</button>
             </form>
           </div>
-        </div>
+        </details>
       </section>
 
       <section class="tiles" id="tiles" aria-label="Plan totals"></section>
@@ -178,18 +184,19 @@
             <input class="plan-title" id="planTitle" data-key="plan-title" aria-label="Plan name" maxlength="80">
             <button type="button" class="btn btn--secondary btn--sm" data-action="add-deliverable">Add deliverable</button>
           </div>
+          <div class="flag-bar" id="flagBar"></div>
           <div class="carry-bar" id="carryBar" role="status" hidden></div>
           <div class="board-grid" id="board"></div>
         </section>
         </div>
 
-        <aside class="flags" aria-labelledby="flagsTitle">
+        <aside class="flags" id="flags" aria-labelledby="flagsTitle">
           <div class="panel-head">
             <h2 class="panel-title" id="flagsTitle">Flags</h2>
-            <span class="panel-count" id="flagCount"></span>
+            <span class="panel-count" id="flagCount" role="status"></span>
           </div>
           <div class="flag-filters" id="flagFilters" role="group" aria-label="Filter flags"></div>
-          <ol class="flag-list" id="flagList" aria-live="polite"></ol>
+          <ol class="flag-list" id="flagList"></ol>
           <button type="button" class="flag-more" id="flagMore" data-action="toggle-info" hidden></button>
         </aside>
       </div>
@@ -236,7 +243,7 @@
         <p class="form-note" id="personCapNote"></p>
       </form>
       <footer class="modal__footer">
-        <button type="button" class="btn btn--danger btn--sm modal__left" data-action="remove-person">Remove from team</button>
+        <button type="button" class="btn btn--ghost btn--sm btn--quiet-danger modal__left" data-action="remove-person">Remove from team</button>
         <button type="button" class="btn btn--ghost" data-modal-close>Cancel</button>
         <button type="submit" class="btn btn--primary" form="personEdit">Save</button>
       </footer>
