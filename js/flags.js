@@ -116,7 +116,7 @@ export function computeFlags(doc, a = analyze(doc)) {
       add('error', 'people', `Nobody is on ${label}${d.estimate ? ` (${pts(d.estimate)})` : ''}.`, t, staffingFix(d, d.estimate || 0))
     } else if (da.gap > 0) {
       // Say when leave made it short: "Ana's vacation (19 to 23 Oct) takes 4" is a different conversation from a missing hire.
-      const why = da.leavePts ? ` ${da.leavePts >= da.gap ? 'Leave explains it' : `Leave explains ${pts(da.leavePts)} of it`}: ${leaveLines(da, doc).join('; ')}.` : ''
+      const why = da.leavePts ? ` ${da.leavePts >= da.gap ? 'Leave explains it' : `Leave explains ${pts(da.leavePts)} of it`}: ${leaveLines(da, doc, a).join('; ')}.` : ''
       add('error', 'people', `${label} is short ${pts(da.gap)}, ${engineers(da.gap, unit)}.${why}`, t, staffingFix(d, da.gap))
     } else if (d.estimate && da.gap < 0) {
       add('warn', 'load', `${label} has ${pts(-da.gap)} more than its estimate.`, t, { action: 'trim', arg: d.id, label: 'Trim to fit' })
@@ -180,7 +180,7 @@ export function computeFlags(doc, a = analyze(doc)) {
  * "Ana Rojas's vacation (19 to 23 Oct) takes 4 pts". Vacation periods are
  * the ones that touch the plan.
  */
-export function leaveLines(da, doc) {
+export function leaveLines(da, doc, a = null) {
   const range = planRange(doc.settings)
   const touches = v => range && parseISO(v.to) >= range.from && parseISO(v.from) < range.to
   return (da.leave || []).map(l => {
@@ -188,7 +188,10 @@ export function leaveLines(da, doc) {
     const name = p?.name.trim() || 'Unnamed'
     const bits = []
     if (l.vacation) {
-      const spans = (p?.vacations || []).filter(touches).map(v => fmtSpan(v.from, v.to))
+      // Only the periods that cost a working day: one on a weekend or a holiday took nothing.
+      const cost = a?.people.get(l.person)?.vacationDays
+      const costs = v => !cost || cost.some(d => d >= v.from && d <= v.to)
+      const spans = (p?.vacations || []).filter(v => touches(v) && costs(v)).map(v => fmtSpan(v.from, v.to))
       bits.push(`${name}'s vacation${spans.length ? ` (${spans.join(', ')})` : ''} takes ${pts(l.vacation)}`)
     }
     if (l.away) bits.push(`${name}'s ${p?.sprintsOff === 1 ? 'sprint' : 'sprints'} away take${p?.sprintsOff === 1 ? 's' : ''} ${pts(l.away)}`)

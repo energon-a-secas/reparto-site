@@ -12,10 +12,14 @@ import { renderFlags } from './render-flags.js'
 import { renderCalendar } from './render-calendar.js'
 import { cal, ensureHolidays, countryName } from './holidays.js'
 import { icon } from './icons.js'
-import { $, escHtml, plural } from './utils.js'
+import { $, escHtml, plural, showToast } from './utils.js'
 
+let warnedFull = false
 export function afterChange() {
-  saveState()
+  // A refused write loses the edit on reload: say so once, with the way out.
+  const saved = saveState()
+  if (!saved && !warnedFull) setTimeout(() => showToast('This browser would not save the plan (storage full or blocked). Export it as JSON, or delete an old plan'), 0)
+  warnedFull = !saved
   renderAll()
 }
 
@@ -45,6 +49,8 @@ function renderChrome() {
       <span class="plan-item"><strong>${escHtml(p.title)}</strong><small>${plural(p.people, 'person', 'people')} · ${plural(p.deliverables, 'deliverable')}${ORIGIN[p.origin] ? ` · ${ORIGIN[p.origin]}` : ''}${p.unsaved ? ' · not saved yet' : ''}</small></span>
       ${p.id === state.planId ? icon('check', { cls: 'plan-check' }) : ''}</button>`).join('')
   $('plansBtn').title = `Plans: ${state.doc.title} (${plural(plans.length, 'plan')} in this browser)`
+  const d = state.doc
+  $('wipeBtn').disabled = !(d.people.length || d.deliverables.length || d.backlog.length || d.daysOff.length)
   $('undoBtn').disabled = !canUndo()
   $('redoBtn').disabled = !canRedo()
   const t = $('planTitle')

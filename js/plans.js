@@ -9,6 +9,7 @@
 //   reparto-v1-previous  deleted and wiped plans, newest first, ten at most
 
 import { state, ui, normalizeDoc, useHistory, dropHistory, newId } from './state.js'
+import { DEFAULT_SETTINGS } from './capacity.js'
 import { examplePlan, blankPlan } from './seed.js'
 
 const STORE_KEY = 'reparto-v1-plans'
@@ -17,23 +18,35 @@ const TAB_KEY = 'reparto-v1-tab'
 const PREVIOUS_KEY = 'reparto-v1-previous'
 const PREVIOUS_MAX = 10
 
+// A store the browser refused to write (full, or storage blocked) is kept
+// here for the session, so every plan opened or edited since stays listed
+// and switchable, and the page can say none of it is saved.
+let pending = null
+
 function readStore() {
+  if (pending) return pending
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null')
     if (s && s.plans && typeof s.plans === 'object') return s
   } catch { /* unreadable: treated as absent */ }
   return null
 }
-const writeStore = s => { try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); return true } catch { return false } }
+function writeStore(s) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); pending = null; return true } catch { pending = s; return false }
+}
 const tabPlan = () => { try { return sessionStorage.getItem(TAB_KEY) } catch { return null } }
 const setTabPlan = id => { try { sessionStorage.setItem(TAB_KEY, id) } catch { /* no session storage */ } }
 const recent = store => Object.entries(store.plans).sort((a, b) => (b[1].savedAt || 0) - (a[1].savedAt || 0)).map(([id]) => id)
 
-// Whether the open plan is in the store. A first visit's untouched example is
-// not: it is nobody's plan, so opening a link or starting a blank one drops it.
-let stored = false
-export const isStored = () => stored
-let exampleId = null      // the first-run example, so it is listed as the example once it is saved
+// A first visit's example is nobody's plan until it is touched: opening a
+// link or a blank plan from it leaves it behind. `untouched` is only that; a
+// write that fails does not make a plan someone edited count as untouched.
+let exampleId = null
+let untouched = false
+/** True while this browser holds nothing but the first visit's untouched example. */
+export const isUntouchedExample = () => untouched && state.planId === exampleId
+/** True while plans exist only in memory because the browser refused to save them. */
+export const isUnsaved = () => !!pending
 
 function open(id, doc) {
   state.planId = id
@@ -49,7 +62,7 @@ export function loadSaved() {
   if (store) {
     for (const id of [tabPlan(), store.active, ...recent(store)]) {
       if (!id || !store.plans[id]) continue
-      try { open(id, normalizeDoc(store.plans[id].doc)); stored = true; return true } catch { /* damaged: try the next */ }
+      try { open(id, normalizeDoc(store.plans[id].doc)); return true } catch { /* damaged: try the next */ }
     }
   } else {
     try {
@@ -59,21 +72,27 @@ export function loadSaved() {
   }
   ui.firstRun = true
   exampleId = newId('pl')
+  untouched = true
   open(exampleId, normalizeDoc(examplePlan()))
-  stored = false
   return false
 }
 
-/** Save the open plan (afterChange calls this on every change). `origin` is recorded the first time only. */
+/**
+ * Save the open plan (afterChange calls this on every change). `origin` is
+ * recorded the first time only. False when the browser refused the write
+ * (storage full or blocked), so the page can say so instead of losing edits quietly.
+ */
 export function saveState(origin = '') {
   const store = readStore() || { v: 1, plans: {} }
   const now = Date.now()
   const had = store.plans[state.planId]
   store.plans[state.planId] = { doc: state.doc, savedAt: now, createdAt: had?.createdAt || now, origin: had?.origin || origin || (state.planId === exampleId ? 'example' : '') }
   store.active = state.planId
-  if (writeStore(store)) stored = true
+  untouched = false
+  const ok = writeStore(store)
   try { localStorage.setItem(LEGACY_KEY, JSON.stringify({ v: 1, doc: state.doc, savedAt: now })) } catch { /* full */ }
   setTabPlan(state.planId)
+  return ok
 }
 
 /** The plans for the switcher, most recently saved first. The open one is always listed. */
@@ -81,15 +100,15 @@ export function listPlans() {
   const store = readStore() || { plans: {} }
   const list = Object.entries(store.plans).map(([id, p]) => ({
     id, title: p.doc?.title || 'Untitled plan', origin: p.origin || '', savedAt: p.savedAt || 0,
-    people: p.doc?.people?.length || 0, deliverables: p.doc?.deliverables?.length || 0,
+    people: p.doc?.people?.length || 0, deliverables: p.doc?.deliverables?.length || 0, unsaved: !!pending,
   }))
   const open = list.find(x => x.id === state.planId)
   if (open) Object.assign(open, { title: state.doc.title, people: state.doc.people.length, deliverables: state.doc.deliverables.length })
-  else list.push({ id: state.planId, title: state.doc.title, origin: 'example', savedAt: Infinity, people: state.doc.people.length, deliverables: state.doc.deliverables.length, unsaved: true })
+  else list.push({ id: state.planId, title: state.doc.title, origin: state.planId === exampleId ? 'example' : '', savedAt: Infinity, people: state.doc.people.length, deliverables: state.doc.deliverables.length, unsaved: true })
   return list.sort((a, b) => b.savedAt - a.savedAt)
 }
 
-/** Open another saved plan. Its undo history (this session's) comes with it. */
+/** Open another plan. Its undo history (this session's) comes with it. */
 export function switchPlan(id) {
   if (id === state.planId) return false
   const store = readStore()
@@ -97,9 +116,9 @@ export function switchPlan(id) {
   if (!entry) return false
   let doc
   try { doc = normalizeDoc(entry.doc) } catch { return false }
-  if (!stored) dropHistory(state.planId)
+  if (isUntouchedExample()) dropHistory(state.planId)
   open(id, doc)
-  stored = true
+  untouched = false
   ui.firstRun = false
   store.active = id
   writeStore(store)
@@ -108,8 +127,9 @@ export function switchPlan(id) {
 
 /**
  * Open a plan as a new one beside the others: a link, an import, the
- * example, a blank or a copy. The same plan already here (same content) is
- * switched to instead of stored twice. Returns { id, existing }.
+ * example, a blank or a copy. The same plan already here (same content once
+ * normalised, and normalising is deterministic) is switched to instead of
+ * stored twice. Returns { id, existing }.
  */
 export function openPlan(raw, origin = '') {
   const doc = normalizeDoc(raw)
@@ -122,7 +142,7 @@ export function openPlan(raw, origin = '') {
       return { id, existing: true }
     } catch { /* damaged entry: not a match */ }
   }
-  if (!stored) dropHistory(state.planId)
+  if (isUntouchedExample()) dropHistory(state.planId)
   open(newId('pl'), doc)
   ui.firstRun = false
   saveState(origin)
@@ -131,7 +151,28 @@ export function openPlan(raw, origin = '') {
 
 export const newBlankPlan = () => openPlan(blankPlan(), 'blank')
 export const openExample = () => openPlan(examplePlan(), 'example')
-export const duplicatePlan = () => openPlan({ ...structuredClone(state.doc), title: `Copy of ${state.doc.title}`.slice(0, 80) }, 'copy')
+/** A copy under a title no other plan has ("Copy of Q4", "Copy 2 of Q4"), so it is always a new plan. */
+export function duplicatePlan() {
+  const titles = new Set(listPlans().map(p => p.title))
+  const base = state.doc.title.replace(/^Copy (\d+ )?of /, '')
+  let title = ''
+  for (let n = 1; !title || titles.has(title); n++) title = `Copy ${n > 1 ? `${n} ` : ''}of ${base.slice(0, 68)}`
+  return openPlan({ ...structuredClone(state.doc), title }, 'copy')
+}
+
+/**
+ * A plan with nothing in it to lose: no people, work or days off, no
+ * countries or worked holidays, default rules and a default name. Only such
+ * a plan is not kept when it is deleted or wiped.
+ */
+export function isBlankPlan(doc) {
+  const s = doc.settings
+  const rules = Object.keys(DEFAULT_SETTINGS).filter(k => k !== 'startDate' && k !== 'countries')
+  return !doc.people.length && !doc.deliverables.length && !(doc.backlog || []).length && !(doc.daysOff || []).length
+    && !(s.countries || []).length && !(s.worked || []).length
+    && rules.every(k => s[k] === DEFAULT_SETTINGS[k])
+    && ['New plan', 'Untitled plan'].includes(doc.title)
+}
 
 /**
  * Delete a plan. It goes to the previous-plans list, so Plans > Restore
@@ -145,11 +186,12 @@ export function deletePlan(id = state.planId) {
   delete store.plans[id]
   dropHistory(id)
   if (id !== state.planId) { writeStore(store); return }
+  ui.firstRun = false
+  untouched = false
   for (const next of recent(store)) {
     try { open(next, normalizeDoc(store.plans[next].doc)) } catch { continue }
     store.active = next
     writeStore(store)
-    stored = true
     return
   }
   writeStore(store)
@@ -165,21 +207,28 @@ export function previousPlans() {
   } catch { return [] }
 }
 
-/** Keep a copy of a plan about to be deleted or wiped. An empty plan is nothing to keep. */
+/** Keep a copy of a plan about to be deleted or wiped. A blank plan (isBlankPlan) is nothing to keep. */
 export function keepPrevious(doc, why = '') {
   try {
-    if (!doc || (!doc.people.length && !doc.deliverables.length && !(doc.backlog || []).length)) return
+    if (!doc || isBlankPlan(doc)) return
     const json = JSON.stringify(doc)
     const list = previousPlans()
     if (list[0] && JSON.stringify(list[0].doc) === json) return
-    list.unshift({ title: doc.title, savedAt: Date.now(), why, doc: JSON.parse(json) })
+    list.unshift({ id: newId('kept'), title: doc.title, savedAt: Date.now(), why, doc: JSON.parse(json) })
     localStorage.setItem(PREVIOUS_KEY, JSON.stringify(list.slice(0, PREVIOUS_MAX)))
   } catch { /* private mode or full: nothing to keep */ }
 }
 
-/** Reopen a kept plan as a plan of its own, and take it off the list. */
-export function restorePrevious(index) {
+/** An entry's key in the restore list; entries kept before keys existed use their time. */
+export const previousKey = e => e.id || String(e.savedAt)
+
+/**
+ * Reopen a kept plan as a plan of its own, and take it off the list. By key,
+ * not position: another tab may have changed the list since it was shown.
+ */
+export function restorePrevious(key) {
   const list = previousPlans()
+  const index = list.findIndex(e => previousKey(e) === String(key))
   const entry = list[index]
   if (!entry) return null
   const opened = openPlan(entry.doc, 'restored')

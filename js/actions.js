@@ -95,18 +95,39 @@ function keepOthers(delivId, change) {
 
 const WHEN = { plan: 'this plan', later: 'Later', done: 'Done' }
 
+/**
+ * Where keyboard focus goes once a deliverable leaves the list on screen:
+ * the next one's menu button, else the previous one's, else the list's tab.
+ * Worked out before the change, run after it.
+ */
+function focusAfter(delivId) {
+  const ids = [...document.querySelectorAll('[data-action="card-menu"]')].map(b => b.dataset.id)
+  const i = ids.indexOf(delivId)
+  const next = i < 0 ? null : ids[i + 1] ?? ids[i - 1]
+  return () => {
+    const el = (next && document.querySelector(`[data-action="card-menu"][data-id="${CSS.escape(next)}"]`))
+      || document.querySelector('[data-action="scope"][aria-pressed="true"]')
+    el?.focus({ preventScroll: true })
+  }
+}
+
 /** Move a deliverable into the plan, or out of it to Later or Done. Its people go with it. */
 export function moveTo(delivId, when) {
   const d = findDeliverable(delivId); if (!d) return
   const name = d.name.trim() || 'The deliverable'
   const pts = when !== 'plan' && deliverable(delivId) ? analyze(state.doc, cal).deliverables.get(delivId)?.got || 0 : 0
+  const refocus = focusAfter(delivId)
   if (!keepOthers(delivId, () => moveDeliverable(delivId, when))) return
+  refocus()
   showToast(when === 'plan' ? `${name} is back in this plan${d.members.length ? ' with its people' : ''}`
     : `${name} moved to ${WHEN[when]}${pts ? `. ${pts} booked pts are free again` : ''}`)
 }
 
 export function removeDeliverablePinned(delivId) {
-  return keepOthers(delivId, () => { removeDeliverable(delivId); return true })
+  const refocus = focusAfter(delivId)
+  const done = keepOthers(delivId, () => { removeDeliverable(delivId); return true })
+  if (done) refocus()
+  return done
 }
 
 // ── Carry: pick up with a click or Enter, put down on a deliverable ──
@@ -114,7 +135,8 @@ export function pickUp(personId, from = null) {
   if (ui.carry && ui.carry.person === personId && ui.carry.from === from) { cancelCarry(); return }
   ui.carry = { person: personId, from }
   renderAll()
-  document.querySelector(`[data-action="drop"]`)?.focus()
+  // The first deliverable, not the roster's "Take off" button, or Enter, Enter would remove them.
+  document.querySelector('[data-action="drop"]:not([data-id="roster"])')?.focus()
 }
 export function cancelCarry() {
   if (!ui.carry) return false
@@ -198,6 +220,8 @@ let _focusTimer = null
 export function show(kind, ids, { instant = false } = {}) {
   if (kind === 'settings') { document.getElementById('calc')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return }
   ui.focus = { kind, ids }
+  // A flag's deliverable is in this plan; Later and Done would not show it.
+  if (kind === 'deliverable') ui.scope = 'plan'
   renderAll()
   const first = document.getElementById(`${kind === 'person' ? 'p' : 'd'}-${ids[0]}`)
   first?.scrollIntoView({ behavior: instant ? 'instant' : 'smooth', block: 'center', inline: 'nearest' })

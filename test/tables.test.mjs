@@ -151,12 +151,14 @@ test('Markdown table has a header rule and escaped pipes', () => {
 
 test('xlsx: a valid zip with one sheet per table, numbers typed, strings escaped', () => {
   const { doc, a, flags } = example(raw => { raw.people[0].name = 'Ana <b>&</b> "Rojas"' })
-  const tables = ['deliverables', 'engineers', 'assignments', 'flags'].map(k => buildTable(k, doc, a, flags))
+  // The same list the Export dialog writes: every table, then Settings.
+  const tables = Object.keys(TABLES).map(k => buildTable(k, doc, a, flags))
   tables.push(settingsTable(doc, a))
   const files = unzip(buildXlsx(tables))
   for (const part of ['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels', 'xl/styles.xml']) assert.ok(files[part], part)
-  assert.equal(Object.keys(files).filter(n => n.startsWith('xl/worksheets/')).length, 5)
+  assert.equal(Object.keys(files).filter(n => n.startsWith('xl/worksheets/')).length, 6)
   assert.match(files['xl/workbook.xml'], new RegExp(`<sheet name="${TABLES.deliverables}"`))
+  assert.match(files['xl/workbook.xml'], new RegExp(`<sheet name="${TABLES.backlog}"`))
   const people = files['xl/worksheets/sheet2.xml']
   assert.match(people, /Ana &lt;b&gt;&amp;&lt;\/b&gt; &quot;Rojas&quot;/)
   assert.match(people, /<c r="K3"><v>34<\/v><\/c>/)                 // Bruno (row 3): planned capacity, a number

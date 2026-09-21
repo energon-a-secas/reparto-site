@@ -34,9 +34,9 @@ export function statusLine(st, tag = 'p') {
 }
 
 /** What leave took from a short deliverable, when it took anything: the vacation that made it short. */
-export function leaveLine(d, da) {
+export function leaveLine(d, da, a) {
   if (!(da.gap > 0 && da.leavePts > 0)) return ''
-  const lines = leaveLines(da, state.doc)
+  const lines = leaveLines(da, state.doc, a)
   return `<p class="deliv-leave" title="${escHtml(lines.join('; '))}">${icon('tree-palm', { size: 14 })}<span>${da.leavePts >= da.gap ? 'Short because of leave' : `${da.leavePts} of the gap is leave`}: ${escHtml(lines.join('; '))}</span></p>`
 }
 
@@ -185,7 +185,7 @@ export function renderBoard(a, flags) {
       </header>
       ${meter(d, da)}
       ${statusLine(st)}
-      ${leaveLine(d, da)}
+      ${leaveLine(d, da, a)}
       ${noteLine(d)}
       <ul class="shares" aria-label="People on ${escHtml(name)}">${d.members.map(m => share(d, m, a)).join('')}</ul>
       ${d.members.length ? '' : `<p class="drop-hint">${icon('circle-plus', { size: 14 })}Drop people here</p>`}

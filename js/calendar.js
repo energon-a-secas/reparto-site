@@ -73,6 +73,9 @@ export function daysOffFor(person, doc, holidays) {
     let a = parseISO(v.from), b = parseISO(v.to)
     if (!a || !b) continue
     if (b < a) [a, b] = [b, a]
+    // Only the days inside the plan matter: a long period must not cost a long loop.
+    if (a < range.from) a = range.from
+    if (b > range.last) b = range.last
     for (let d = a; d <= b; d = addDays(d, 1)) if (!off.has(iso(d))) off.set(iso(d), { kind: 'vacation', label: 'Vacation' })
   }
   return off
@@ -87,6 +90,7 @@ export function personSprints(person, doc, holidays) {
   const s = doc.settings
   const off = daysOffFor(person, doc, holidays)
   const lost = { holiday: 0, team: 0, vacation: 0 }
+  const vacationDays = []     // the vacation dates that cost a working day, for naming the periods that did
   const sprints = sprintWindows(s).map(w => {
     let focus = 0
     for (let wk = w.from; wk < w.to; wk = addDays(wk, 7)) {
@@ -94,14 +98,14 @@ export function personSprints(person, doc, holidays) {
       for (let d = wk; d < addDays(wk, 7) && d < w.to; d = addDays(d, 1)) {
         if (!isWorkday(d, s.daysPerWeek)) continue
         const o = off.get(iso(d))
-        if (o) lost[o.kind] += 1; else avail += 1
+        if (o) { lost[o.kind] += 1; if (o.kind === 'vacation') vacationDays.push(iso(d)) } else avail += 1
       }
       focus += Math.max(0, avail - (s.meetingDay && avail > 0 ? 1 : 0))
     }
     const raw = focus * s.pointsPerDay
     return { ...w, focus, points: s.sprintCap > 0 ? Math.min(s.sprintCap, raw) : raw }
   })
-  return { sprints, lost }
+  return { sprints, lost, vacationDays }
 }
 
 /** The last working day of a window, for "5 to 16 Oct" and a plan's end date. */

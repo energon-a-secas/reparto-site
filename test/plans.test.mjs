@@ -91,7 +91,7 @@ test('deleting keeps a copy to restore, opens the next plan, and the last delete
   plans.deletePlan()
   assert.equal(st.state.doc.title, 'New plan')
   assert.equal(st.state.doc.people.length, 0)
-  const back = plans.restorePrevious(1)
+  const back = plans.restorePrevious(plans.previousKey(plans.previousPlans()[1]))
   assert.equal(back.title, 'Two')
   assert.equal(st.state.doc.title, 'Two')
   assert.equal(plans.previousPlans().length, 1)

@@ -11,6 +11,8 @@ import { planRange, sprintWindows, lastWorkday, fmtDay, fmtSpan, parseISO } from
 // CommonMark ends a line at LF, CRLF or a lone CR: flatten all three.
 const flat = s => String(s ?? '').replace(/\r\n?|\n/g, ' ')
 const cell = s => flat(s).replace(/\|/g, '\\|')
+// A list item that starts with '#', '>', '-', '+', '*' or '1.' would open a heading, quote or list.
+const lead = s => flat(s).replace(/^(\s*)(#{1,6}(?=\s|$)|[>+*-](?=\s))/, '$1\\$2').replace(/^(\s*\d+)([.)](?=\s))/, '$1\\$2')
 const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`
 const pctText = p => `${p < 10 && !Number.isInteger(p) ? Math.round(p * 10) / 10 : Math.round(p)}%`
 const r1 = n => (Number.isInteger(n) ? String(n) : n.toFixed(1))
@@ -68,7 +70,7 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
       const da = a.deliverables.get(d.id)
       const who = d.members.map(m => { const sh = a.shares.get(shareKey(d.id, m.person)); return `${name(m.person)} ${sh.points} (${pctText(sh.pct)})` })
       // A short deliverable says which leave made it short.
-      const leave = da.gap > 0 && da.leavePts ? `; leave: ${leaveLines(da, doc).join(', ')}` : ''
+      const leave = da.gap > 0 && da.leavePts ? `; leave: ${leaveLines(da, doc, a).join(', ')}` : ''
       return `| ${cell(d.name.trim() || 'Untitled deliverable')} | ${d.estimate ?? '?'} | ${da.got} | ${cell(who.join(', ') || 'none')} | ${cell(statusText(deliverableStatus(d, da, a, doc)) + leave)} | ${cell(d.note) || ' '} |`
     }),
     '',
@@ -100,7 +102,7 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
     lines.push('', `## ${title}`, '', `Not counted in this plan.`, '')
     for (const d of list) {
       const who = d.members.map(m => name(m.person)).join(', ')
-      lines.push(`- ${flat(d.name.trim() || 'Untitled deliverable')}${d.estimate ? `, ${d.estimate} pts` : ', unsized'}${who ? `, ${flat(who)}` : ''}${d.note ? `: ${flat(d.note)}` : ''}`)
+      lines.push(`- ${lead(d.name.trim() || 'Untitled deliverable')}${d.estimate ? `, ${plural(d.estimate, 'pt')}` : ', unsized'}${who ? `, ${flat(who)}` : ''}${d.note ? `: ${flat(d.note)}` : ''}`)
     }
   }
   if (flags.length) {

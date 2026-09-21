@@ -103,7 +103,7 @@ export function renderCalendar(a, cal) {
     // Two or more of one kind: work them all in one step.
     ...Object.keys(TAGS).map(tag => {
       const n = c.costs.filter(x => cal.tag?.(c.code, x.date) === tag).length
-      return n > 1 ? `<li class="day-bulk"><button type="button" class="chip-btn" data-action="work-tagged" data-code="${c.code}" data-tag="${tag}" title="${escHtml(TAGS[tag].title)}">Work all ${n} ${TAGS[tag].label} days${multi ? ` (${c.code})` : ''}</button></li>` : ''
+      return n > 1 ? `<li class="day-bulk"><button type="button" class="chip-btn" data-action="work-tagged" data-code="${c.code}" data-tag="${tag}" title="${escHtml(TAGS[tag].title)}">Work all ${n} ${TAGS[tag].many}${multi ? ` (${c.code})` : ''}</button></li>` : ''
     }),
   ]).join('')
     + teamCosts.map(t => `<li class="day-chip day-chip--team">${who(t)}<span class="day-date">${fmtDay(t.d)}</span> ${escHtml(t.label || 'Team day off')}

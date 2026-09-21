@@ -10,9 +10,10 @@
 // every number, because analyze() and the flags only read `deliverables`.
 
 import { DEFAULT_SETTINGS, SCALE, ROUNDING, defaultStart, PCT_MIN, PCT_MAX } from './capacity.js'
-import { parseISO } from './calendar.js'
+import { parseISO, addDays, iso } from './calendar.js'
 
 const UNDO_DEPTH = 40
+const MAX_LEAVE_DAYS = 3 * 366
 
 export const state = { doc: null, planId: null }   // set by plans.js loadSaved()
 
@@ -65,6 +66,9 @@ function periods(list) {
     if (!from && !to) continue
     from ||= to; to ||= from
     if (to < from) [from, to] = [to, from]
+    // A leave longer than three years is a typo or a hostile link; it would walk a million days on every render.
+    const cap = addDays(parseISO(from), MAX_LEAVE_DAYS)
+    if (parseISO(to) > cap) to = iso(cap)
     out.push({ from, to })
     if (out.length >= 40) break
   }
@@ -98,10 +102,15 @@ export function normalizeDoc(raw) {
   const people = []
   const seen = new Set()
   const idMap = new Map()     // the id a member names -> the person's id after cleaning
+  // A missing or clashing id gets the next free "p-1", "d-2": from the input alone, never
+  // the clock, so the same link or file normalises to the same plan every time.
+  let n = 0
+  const fresh = pre => { let id; do id = `${pre}-${++n}`; while (seen.has(id) || taken.has(id)); return id }
+  const taken = new Set([...raw.people, ...raw.deliverables, ...(Array.isArray(raw.backlog) ? raw.backlog : [])].map(x => safeId(x?.id)).filter(Boolean))
   for (const p of raw.people) {
     if (!p || typeof p !== 'object') continue
-    let id = safeId(p.id) || newId('p')
-    if (seen.has(id)) id = newId('p')
+    let id = safeId(p.id) || fresh('p')
+    if (seen.has(id)) id = fresh('p')
     seen.add(id)
     if (!idMap.has(String(p.id))) idMap.set(String(p.id), id)
     people.push({
@@ -115,8 +124,8 @@ export function normalizeDoc(raw) {
   }
   // A deliverable, in the plan or its backlog. Members must name a person; unknown ids are dropped.
   const deliverable = d => {
-    let id = safeId(d.id) || newId('d')
-    if (seen.has(id)) id = newId('d')
+    let id = safeId(d.id) || fresh('d')
+    if (seen.has(id)) id = fresh('d')
     seen.add(id)
     const members = []
     for (const m of Array.isArray(d.members) ? d.members : []) {

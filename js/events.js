@@ -7,7 +7,7 @@ import {
   addPerson, addDeliverable, addBacklogItem, updateDeliverable, unassign, addDayOff, removeDayOff, setWorked, wipe,
 } from './state.js'
 import {
-  saveState, switchPlan, newBlankPlan, openExample, duplicatePlan, deletePlan, previousPlans, keepPrevious, restorePrevious, listPlans,
+  saveState, switchPlan, newBlankPlan, openExample, duplicatePlan, deletePlan, previousPlans, previousKey, keepPrevious, restorePrevious, listPlans, isBlankPlan,
 } from './plans.js'
 import { analyze } from './capacity.js'
 import { parseISO } from './calendar.js'
@@ -57,15 +57,16 @@ function setupMenu(btnId, menuId) {
     if (focusBtn) btn.focus()
   }
   menus.push(close)
-  btn.addEventListener('click', e => {
-    e.stopPropagation()
+  // No stopPropagation here: the kit's own outside-click closer must see this click to shut its
+  // ⋯ panel. Ours listens in the capture phase, because the kit's ⋯ toggle stops its click.
+  btn.addEventListener('click', () => {
     const open = !menu.classList.contains('open')
     menus.forEach(c => c())
     menu.classList.toggle('open', open)
     btn.setAttribute('aria-expanded', String(open))
     if (open) (menu.querySelector('[aria-checked="true"]') || items()[0])?.focus()
   })
-  document.addEventListener('click', e => { if (!menu.contains(e.target) && !btn.contains(e.target)) close() })
+  document.addEventListener('click', e => { if (!menu.contains(e.target) && !btn.contains(e.target)) close() }, true)
   menu.addEventListener('click', e => { if (e.target.closest('[role="menuitem"], [role="menuitemradio"]')) close() })
   menu.addEventListener('keydown', e => {
     const list = items(), i = list.indexOf(document.activeElement)
@@ -129,15 +130,23 @@ function runAction(action, el = null) {
       $('cal').open = true            // a blank plan's first question is whose holidays count
       $('personName').focus()
       break
-    case 'duplicate': duplicatePlan(); opened(`Duplicated: you are now in ${state.doc.title}`); break
+    case 'duplicate': {
+      const r = duplicatePlan()
+      opened(r.existing ? `An identical copy was already here: you are now in ${state.doc.title}` : `Duplicated: you are now in ${state.doc.title}`)
+      break
+    }
     case 'delete-plan': {
       const d = state.doc, others = listPlans().length - 1
       askConfirm({
         title: `Delete ${d.title}?`,
         body: `It holds ${plural(d.people.length, 'person', 'people')} and ${plural(d.deliverables.length, 'deliverable')}. ${others ? 'Your most recent other plan opens next.' : 'A blank plan opens next.'}`,
-        safe: 'A copy is kept under Plans > Restore a deleted plan.',
+        safe: isBlankPlan(d) ? '' : 'A copy is kept under Plans > Restore a deleted plan.',
         confirm: 'Delete plan',
-      }, () => { const title = d.title; deletePlan(); opened(`Deleted ${title}. Plans > Restore a deleted plan brings it back`) })
+      }, () => {
+        const title = d.title, kept = !isBlankPlan(d)
+        deletePlan()
+        opened(kept ? `Deleted ${title}. Plans > Restore a deleted plan brings it back` : `Deleted ${title}`)
+      })
       break
     }
     case 'wipe': {
@@ -148,14 +157,14 @@ function runAction(action, el = null) {
         title: `Wipe ${d.title}?`,
         body: `Removes ${what}. The plan's name, dates, countries and sprint rules stay.`,
         check: 'Also reset the dates, countries and sprint rules',
-        safe: 'Ctrl+Z brings it all back, and a copy is kept under Plans > Restore a deleted plan.',
+        safe: `Ctrl+Z brings it all back${isBlankPlan(d) ? '' : ', and a copy is kept under Plans > Restore a deleted plan'}.`,
         confirm: 'Wipe plan',
       }, settings => {
         keepPrevious(state.doc, 'wiped')
         snapshot(); wipe({ settings }); ui.firstRun = false; ui.scope = 'plan'
         afterChange()
         showToast('Wiped. Ctrl+Z brings it back')
-        $('personName').focus()
+        // Focus stays where the dialog returns it: in the name field, Ctrl+Z would undo typing, not the wipe.
       })
       break
     }
@@ -163,8 +172,9 @@ function runAction(action, el = null) {
     case 'previous': openPrevious(); break
     case 'restore-previous': {
       closeModal('previousModal')
-      const r = restorePrevious(Number(el.dataset.index))
-      if (r) opened(r.existing ? `${r.title} was already here, so it is open now` : `Restored ${r.title} as a plan of its own`)
+      const r = restorePrevious(el.dataset.prev)
+      if (!r) { showToast('That plan is no longer in the list: another tab restored it'); break }
+      opened(r.existing ? `${r.title} was already here, so it is open now` : `Restored ${r.title} as a plan of its own`)
       break
     }
     case 'import': $('importFile').click(); break
@@ -347,7 +357,7 @@ function openPrevious() {
   const when = t => { try { return new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) } catch { return '' } }
   const why = { deleted: 'deleted', wiped: 'wiped' }
   $('previousList').innerHTML = list.length
-    ? list.map((e, i) => `<li><button type="button" class="previous-btn" data-action="restore-previous" data-index="${i}">
+    ? list.map(e => `<li><button type="button" class="previous-btn" data-action="restore-previous" data-prev="${escHtml(previousKey(e))}">
         <strong>${escHtml(e.doc.title || 'Untitled plan')}</strong>
         <span>${plural(e.doc.people.length, 'person', 'people')}, ${plural(e.doc.deliverables.length, 'deliverable')} · ${why[e.why] || 'replaced'} ${escHtml(when(e.savedAt))}</span></button></li>`).join('')
     : '<li class="form-note">Nothing kept yet.</li>'

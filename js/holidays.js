@@ -28,8 +28,8 @@ export const cal = {
 
 /** What each tag means, for the chip's label and title. */
 export const TAGS = {
-  'often-worked': { label: 'often worked', title: 'A federal holiday that many private employers work' },
-  bridge: { label: 'bridge day', title: 'A non-working day set by decree: the public sector is off, private employers may work it' },
+  'often-worked': { label: 'often worked', many: 'often-worked days', title: 'A federal holiday that many private employers work' },
+  bridge: { label: 'bridge day', many: 'bridge days', title: 'A non-working day set by decree: the public sector is off, private employers may work it' },
 }
 
 /** The dates with one tag that still cost a working day in this plan, for "work them all". */

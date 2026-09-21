@@ -59,7 +59,7 @@ export function renderTable(a, flags) {
     const gap = !d.estimate ? '' : da.gap > 0 ? `<span class="error-text">${da.gap}</span>` : da.gap < 0 ? `<span class="warn-text">+${-da.gap}</span>` : '0'
     return `<tr class="trow trow--${st.cls}${ui.focus?.ids.includes(d.id) ? ' is-focus' : ''}${carry ? ' is-target' : ''}" id="d-${d.id}" data-drop="deliverable" data-deliv="${d.id}">
       <td class="t-status">${shortStatus(st, da)}</td>
-      <td class="t-name">${nameInput(d)}${st.risk ? `<p class="t-why status--risk">${escHtml(st.text)}</p>` : ''}${noteLine(d, 't-note')}${leaveLine(d, da)}</td>
+      <td class="t-name">${nameInput(d)}${st.risk ? `<p class="t-why status--risk">${escHtml(st.text)}</p>` : ''}${noteLine(d, 't-note')}${leaveLine(d, da, a)}</td>
       <td class="num">${estButton(d)}</td>
       <td class="num">${da.got}</td>
       <td class="num" title="${da.gap > 0 ? escHtml(engineers(da.gap, unit)) : ''}">${gap}</td>
