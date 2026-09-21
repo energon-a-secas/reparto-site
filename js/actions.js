@@ -4,6 +4,7 @@
 
 import { state, ui, snapshot, person, deliverable, assign, unassign, moveShare, setPoints, addPerson } from './state.js'
 import { analyze } from './capacity.js'
+import { cal } from './holidays.js'
 import { afterChange, renderAll } from './render.js'
 import { showToast } from './utils.js'
 
@@ -15,7 +16,7 @@ const nameOf = p => p?.name.trim() || 'Unnamed'
  * one already covered, gets one sprint's worth instead of the whole plan.
  */
 export function defaultShare(personId, delivId) {
-  const a = analyze(state.doc)
+  const a = analyze(state.doc, cal)
   const free = a.people.get(personId)?.free ?? 0
   const need = deliverable(delivId)?.estimate ? a.deliverables.get(delivId).gap : 0
   const sprint = Math.max(1, a.sprint)
@@ -48,7 +49,7 @@ export function dropPerson(personId, from, target) {
   }
   const pts = defaultShare(personId, target)
   snapshot(); assign(target, personId, pts); afterChange()
-  const left = analyze(state.doc).people.get(personId).free
+  const left = analyze(state.doc, cal).people.get(personId).free
   showToast(`${nameOf(p)} gives ${pts} pts to ${d.name || 'the deliverable'} (${left < 0 ? `${-left} over` : `${left} free`})`)
   return true
 }

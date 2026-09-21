@@ -48,6 +48,19 @@ export function computeFlags(doc, a = analyze(doc)) {
   }
   if (!a.unit) add('error', 'data', 'The settings leave no capacity at all: check focus days and sprints.', { kind: 'settings', ids: [] })
 
+  // ── Calendar ──
+  for (const c of a.calendar.failed) {
+    add('warn', 'data', `Public holidays for ${c} could not be loaded, so none are counted there. Add them as team days off.`, { kind: 'settings', ids: [] })
+  }
+  if (!doc.settings.country && doc.people.some(p => !p.country)) {
+    add('info', 'data', 'No holiday calendar is set, so public holidays are not taken out. Pick a country under the formula.', { kind: 'settings', ids: [] })
+  }
+  const away = doc.people.filter(p => a.people.get(p.id).lost.vacation > 0)
+  if (away.length) {
+    add('info', 'load', `Vacations in this plan: ${away.map(p => `${nameOf.get(p.id)} ${a.people.get(p.id).lost.vacation} days`).join(', ')}.`,
+      { kind: 'person', ids: away.map(p => p.id) })
+  }
+
   // ── Deliverables ──
   for (const d of doc.deliverables) {
     const t = { kind: 'deliverable', ids: [d.id] }

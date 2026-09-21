@@ -5,6 +5,8 @@
 
 import { state, resetTo, normalizeDoc } from './state.js'
 import { analyze, ROUNDING } from './capacity.js'
+import { cal, countryName } from './holidays.js'
+import { planRange, fmtDay } from './calendar.js'
 import { computeFlags, CATEGORIES } from './flags.js'
 import { afterChange } from './render.js'
 import { showToast, download, copyText, slug } from './utils.js'
@@ -51,13 +53,16 @@ export async function importFile(file) {
 const cell = s => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ')
 
 export function toMarkdown(doc = state.doc) {
-  const a = analyze(doc)
+  const a = analyze(doc, cal)
   const s = doc.settings
+  const range = planRange(s)
   const name = id => doc.people.find(p => p.id === id)?.name || 'Unnamed'
   const lines = [
     `# ${doc.title}`,
     '',
-    `**One engineer:** ${s.weeksPerSprint}-week sprints × ${a.focus} focus days a week × ${s.pointsPerDay} pt = ${a.sprint} pts a sprint; × ${s.sprints} sprints${s.buffer ? `, ${s.buffer}% buffer` : ''} = ${+a.unitRaw.toFixed(1)}, planned as **${a.unit}** (${ROUNDING[s.rounding]}).`,
+    `**One engineer:** ${s.weeksPerSprint}-week sprints × ${a.focus} focus days a week × ${s.pointsPerDay} pt = ${a.sprint} pts a sprint; × ${s.sprints} sprints = ${a.base}${a.offPts ? ` − ${a.offPts} for ${a.offDays} days off` : ''}${s.buffer ? `, ${s.buffer}% buffer` : ''} = ${+a.unitRaw.toFixed(1)}, planned as **${a.unit}** (${ROUNDING[s.rounding]}).`,
+    '',
+    `**Calendar:** starts ${fmtDay(s.startDate, true)}${range ? `, ends ${fmtDay(range.last, true)}` : ''} · public holidays: ${s.country ? countryName(s.country) : 'none'}${doc.daysOff.length ? ` · team days off: ${doc.daysOff.map(t => `${fmtDay(t.date)} ${t.label}`).join(', ')}` : ''}`,
     '',
     `**Team:** ${a.capacity} pts capacity · ${a.demand} pts demand · ${a.allocated} booked · ${a.shortfall} short`,
     '',
@@ -73,11 +78,12 @@ export function toMarkdown(doc = state.doc) {
     '',
     '## People',
     '',
-    '| Person | Role | Capacity | Booked | Free |',
-    '|---|---|---:|---:|---:|',
+    '| Person | Role | Days off | Capacity | Booked | Free |',
+    '|---|---|---|---:|---:|---:|',
     ...doc.people.map(p => {
       const pa = a.people.get(p.id)
-      return `| ${cell(p.name || 'Unnamed')}${p.open ? ' (open role)' : ''} | ${cell(p.role) || 'none'} | ${pa.cap} | ${pa.used} | ${pa.free} |`
+      const off = [pa.lost.holiday && `${pa.lost.holiday} holiday`, pa.lost.team && `${pa.lost.team} team`, pa.lost.vacation && `${pa.lost.vacation} vacation`, pa.away && `${pa.away} sprint away`].filter(Boolean).join(', ') || 'none'
+      return `| ${cell(p.name || 'Unnamed')}${p.open ? ' (open role)' : ''} | ${cell(p.role) || 'none'} | ${off} | ${pa.cap} | ${pa.used} | ${pa.free} |`
     }),
   ]
   const flags = computeFlags(doc, a)

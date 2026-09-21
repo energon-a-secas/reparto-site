@@ -4,6 +4,7 @@
 
 import { state, snapshot, deliverable, person, updateDeliverable, setPoints, unassign } from './state.js'
 import { SCALE, fibCeil, analyze } from './capacity.js'
+import { cal } from './holidays.js'
 import { afterChange } from './render.js'
 import { $, escHtml, showToast } from './utils.js'
 
@@ -86,7 +87,7 @@ export function openEstimate(delivId) {
     <p class="pop-note">An estimate rounds up: when the team is unsure, the bigger number is the honest one.</p>`,
   'Size the deliverable')
   if (!pop) return
-  const sprint = analyze(state.doc).sprint
+  const sprint = analyze(state.doc, cal).sprint
   const recalc = () => {
     const eng = Number(pop.querySelector('[data-in="eng"]').value) || 0
     const spr = Number(pop.querySelector('[data-in="spr"]').value) || 0
@@ -121,7 +122,7 @@ export function openPoints(delivId, personId) {
   const d = deliverable(delivId), p = person(personId)
   const m = d?.members.find(x => x.person === personId)
   if (!m || !p) return
-  const a = analyze(state.doc)
+  const a = analyze(state.doc, cal)
   const pa = a.people.get(personId), da = a.deliverables.get(delivId)
   const opts = [1, 2, 3, 5, 8, 13, 21, 34, 55]
   const quick = []

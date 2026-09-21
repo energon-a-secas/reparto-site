@@ -8,6 +8,8 @@ import { analyze, horizons, ROUNDING, asEngineers } from './capacity.js'
 import { computeFlags } from './flags.js'
 import { renderRoster, renderBoard } from './render-board.js'
 import { renderFlags } from './render-flags.js'
+import { renderCalendar } from './render-calendar.js'
+import { cal, ensureHolidays } from './holidays.js'
 import { $, escHtml, plural } from './utils.js'
 
 export function afterChange() {
@@ -17,9 +19,11 @@ export function afterChange() {
 
 export function renderAll() {
   const key = document.activeElement?.dataset?.key
-  const a = analyze(state.doc)
+  const a = analyze(state.doc, cal)
+  ensureHolidays(a.calendar.needed)       // a calendar that arrives later repaints through onHolidays()
   const flags = computeFlags(state.doc, a)
   renderCalc(a)
+  renderCalendar(a, cal)
   renderTiles(a)
   renderRoster(a, flags)
   renderBoard(a, flags)
@@ -57,8 +61,8 @@ function renderCalc(a) {
     `<button type="button" class="chip-btn" data-action="horizon" data-sprints="${h.sprints}" data-key="h-${h.key}" aria-pressed="${s.sprints === h.sprints}">${h.label} · ${h.sprints}</button>`
   ).join('')
   const capList = [0, 3, 5, 8, 13, 21]
-  const rounded = a.unit !== Math.round(a.unitRaw)
-  const delta = a.unit - Math.round(a.unitRaw)
+  const delta = Math.round(a.unit - a.unitRaw)
+  const rounded = delta !== 0
 
   $('calcChain').innerHTML = [
     term({ value: sel('weeksPerSprint', [1, 2, 3, 4], s.weeksPerSprint, 'Weeks per sprint'), label: s.weeksPerSprint === 1 ? 'week a sprint' : 'weeks a sprint' }),
@@ -80,6 +84,8 @@ function renderCalc(a) {
     }),
     op('×'),
     term({ value: sel('sprints', range(1, 13), s.sprints, 'Sprints in this plan'), label: s.sprints === 1 ? 'sprint' : 'sprints', sub: presets }),
+    op('−'),
+    term({ value: `<span class="term-num">${fmt(a.offPts)}</span>`, label: `pts for ${plural(a.offDays, 'day')} off`, sub: '<span class="term-note">holidays, team days</span>' }),
     op('−'),
     term({ value: sel('buffer', [0, 10, 15, 20, 25, 30], s.buffer, 'Buffer held back', v => `${v}%`), label: 'buffer' }),
     op('='),

@@ -1,18 +1,25 @@
 // ── Example plan ─────────────────────────────────────────────
 // Six people and seven deliverables, wrong on purpose so every kind of flag
 // shows up on first load: an unsized deliverable, one nobody took, one short
-// of people, one person over-booked, one open role carrying work, and a 55
-// that should be split. Fixing them is the tour.
+// of people, one person over-booked, one open role carrying work, a 55 that
+// should be split, and a vacation that leaves Ana over-booked. Fixing them is
+// the tour. The team calendar is Chile's, the country the names suggest.
 
-import { DEFAULT_SETTINGS } from './capacity.js'
+import { DEFAULT_SETTINGS, defaultStart } from './capacity.js'
+import { parseISO, addDays, iso } from './calendar.js'
 
 export function examplePlan() {
+  // Dates follow the calendar so the example never plans a quarter already gone:
+  // it starts next quarter, and Ana takes the third week off.
+  const start = defaultStart()
+  const week3 = addDays(parseISO(start), 14)
   return {
     v: 1,
     title: 'Example quarter',
-    settings: { ...DEFAULT_SETTINGS },
+    settings: { ...DEFAULT_SETTINGS, startDate: start, country: 'CL' },
+    daysOff: [],
     people: [
-      { id: 'ana', name: 'Ana Rojas', role: 'Backend', load: 100, sprintsOff: 0, open: false },
+      { id: 'ana', name: 'Ana Rojas', role: 'Backend', load: 100, sprintsOff: 0, open: false, vacations: [{ from: iso(week3), to: iso(addDays(week3, 4)) }] },
       { id: 'bruno', name: 'Bruno Silva', role: 'Frontend', load: 100, sprintsOff: 0, open: false },
       { id: 'carla', name: 'Carla Méndez', role: 'Full stack', load: 100, sprintsOff: 0, open: false },
       { id: 'diego', name: 'Diego Fuentes', role: 'Mobile', load: 100, sprintsOff: 1, open: false },
@@ -32,5 +39,5 @@ export function examplePlan() {
 }
 
 export function blankPlan() {
-  return { v: 1, title: 'New plan', settings: { ...DEFAULT_SETTINGS }, people: [], deliverables: [] }
+  return { v: 1, title: 'New plan', settings: { ...DEFAULT_SETTINGS, startDate: defaultStart() }, daysOff: [], people: [], deliverables: [] }
 }

@@ -3,13 +3,14 @@
 // never in an undo snapshot). Every mutation is: snapshot(), mutate,
 // afterChange() in render.js, which saves and repaints.
 
-import { DEFAULT_SETTINGS, SCALE, ROUNDING } from './capacity.js'
+import { DEFAULT_SETTINGS, SCALE, ROUNDING, defaultStart } from './capacity.js'
+import { parseISO } from './calendar.js'
 import { examplePlan } from './seed.js'
 
 const STORAGE_KEY = 'reparto-v1'
 const UNDO_DEPTH = 40
 
-export const state = { doc: examplePlan() }
+export const state = { doc: null }   // set by loadSaved(): the saved plan, else the example
 
 export const ui = {
   carry: null,        // { person, from } while a person is picked up by click or key
@@ -27,6 +28,22 @@ const num = (v, lo, hi, dflt) => {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt
 }
 const str = (v, max = 80) => (typeof v === 'string' ? v.slice(0, max) : '')
+const date = v => (parseISO(v) ? v : '')
+const code = v => (typeof v === 'string' && /^[A-Z]{2}$/.test(v) ? v : '')
+
+/** Vacation periods: valid dates only, a reversed range swapped, at most 40 a person. */
+function periods(list) {
+  const out = []
+  for (const v of Array.isArray(list) ? list : []) {
+    let from = date(v?.from), to = date(v?.to)
+    if (!from && !to) continue
+    from ||= to; to ||= from
+    if (to < from) [from, to] = [to, from]
+    out.push({ from, to })
+    if (out.length >= 40) break
+  }
+  return out.sort((a, b) => a.from.localeCompare(b.from))
+}
 let seq = 0
 export const newId = prefix => `${prefix}-${Date.now().toString(36)}${(seq++).toString(36)}`
 
@@ -37,6 +54,8 @@ export function normalizeDoc(raw) {
   }
   const s = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) }
   const settings = {
+    startDate: date(s.startDate) || defaultStart(),
+    country: code(s.country),
     weeksPerSprint: num(s.weeksPerSprint, 1, 4, 2),
     daysPerWeek: num(s.daysPerWeek, 1, 7, 5),
     meetingDay: !!s.meetingDay,
@@ -58,6 +77,8 @@ export function normalizeDoc(raw) {
       load: num(p.load ?? 100, 0, 100, 100),
       sprintsOff: num(Math.round(p.sprintsOff || 0), 0, 13, 0),
       open: !!p.open,
+      country: code(p.country),
+      vacations: periods(p.vacations),
     })
   }
   const deliverables = []
@@ -78,20 +99,25 @@ export function normalizeDoc(raw) {
       members,
     })
   }
-  return { v: 1, title: str(raw.title) || 'Untitled plan', settings, people, deliverables }
+  const daysOff = []
+  for (const t of Array.isArray(raw.daysOff) ? raw.daysOff : []) {
+    const d = date(t?.date)
+    if (d && !daysOff.some(x => x.date === d)) daysOff.push({ date: d, label: str(t.label, 60) })
+    if (daysOff.length >= 200) break
+  }
+  daysOff.sort((a, b) => a.date.localeCompare(b.date))
+  return { v: 1, title: str(raw.title) || 'Untitled plan', settings, daysOff, people, deliverables }
 }
 
 // ── Persistence ──────────────────────────────────────────────
 export function loadSaved() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) { ui.firstRun = true; return false }
-    state.doc = normalizeDoc(JSON.parse(raw).doc)
-    return true
-  } catch {
-    ui.firstRun = true
-    return false
-  }
+    if (raw) { state.doc = normalizeDoc(JSON.parse(raw).doc); return true }
+  } catch { /* unreadable: fall through to the example */ }
+  ui.firstRun = true
+  state.doc = normalizeDoc(examplePlan())
+  return false
 }
 
 export function saveState() {
@@ -133,11 +159,23 @@ export const deliverable = id => state.doc.deliverables.find(d => d.id === id)
 export function setSetting(key, value) { state.doc.settings[key] = value }
 
 export function addPerson(fields = {}) {
-  const p = { id: newId('p'), name: '', role: '', load: 100, sprintsOff: 0, open: false, ...fields }
+  const p = { id: newId('p'), name: '', role: '', load: 100, sprintsOff: 0, open: false, country: '', vacations: [], ...fields }
   state.doc.people.push(p)
   return p
 }
-export function updatePerson(id, fields) { Object.assign(person(id) || {}, fields) }
+export function updatePerson(id, fields) {
+  const p = person(id); if (!p) return
+  Object.assign(p, fields)
+  if (fields.vacations) p.vacations = periods(fields.vacations)
+}
+
+export function addDayOff(date, label) {
+  if (!parseISO(date) || state.doc.daysOff.some(x => x.date === date)) return false
+  state.doc.daysOff.push({ date, label: str(label, 60) })
+  state.doc.daysOff.sort((a, b) => a.date.localeCompare(b.date))
+  return true
+}
+export function removeDayOff(date) { state.doc.daysOff = state.doc.daysOff.filter(x => x.date !== date) }
 export function removePerson(id) {
   state.doc.people = state.doc.people.filter(p => p.id !== id)
   for (const d of state.doc.deliverables) d.members = d.members.filter(m => m.person !== id)

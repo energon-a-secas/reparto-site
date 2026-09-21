@@ -4,17 +4,20 @@
 
 import {
   state, ui, snapshot, undo, redo, resetTo, setSetting, person, deliverable,
-  addPerson, updatePerson, removePerson, addDeliverable, updateDeliverable, removeDeliverable, unassign,
+  addPerson, addDeliverable, updateDeliverable, removeDeliverable, unassign, addDayOff, removeDayOff,
 } from './state.js'
-import { analyze, capacityOf, rawCapacity } from './capacity.js'
+import { analyze } from './capacity.js'
+import { parseISO } from './calendar.js'
+import { cal } from './holidays.js'
+import { bindPersonEditor, openPerson, removeEditedPerson } from './person-editor.js'
 import { examplePlan, blankPlan } from './seed.js'
 import { afterChange, renderAll } from './render.js'
 import { bindDnd, justDragged } from './dnd.js'
 import { pickUp, putDown, cancelCarry, applyFix, show } from './actions.js'
 import { openEstimate, openPoints, closePop, popAnchor, repositionPop } from './popover.js'
-import { openModal, closeModal, modalKeydown, modalClick } from './modal.js'
+import { openModal, modalKeydown, modalClick } from './modal.js'
 import { runExport, importFile } from './io.js'
-import { $, showToast, plural } from './utils.js'
+import { $, showToast } from './utils.js'
 
 export function bindEvents() {
   bindDnd()
@@ -26,8 +29,8 @@ export function bindEvents() {
   document.addEventListener('scroll', repositionPop, { capture: true, passive: true })
   window.addEventListener('resize', repositionPop)
   $('personForm').addEventListener('submit', onAddPerson)
-  $('personEdit').addEventListener('submit', onSavePerson)
-  $('personEdit').addEventListener('input', paintCapNote)
+  $('dayOffForm').addEventListener('submit', onAddDayOff)
+  bindPersonEditor()
   $('importFile').addEventListener('change', e => { const f = e.target.files[0]; if (f) importFile(f); e.target.value = '' })
 }
 
@@ -98,13 +101,8 @@ function runAction(action, el = null) {
       break
     }
     case 'edit-person': openPerson(id); break
-    case 'remove-person': {
-      const pid = $('personEdit').dataset.id, p = person(pid); if (!p) break
-      closeModal('personModal')
-      snapshot(); removePerson(pid); afterChange()
-      showToast(`${p.name || 'Person'} removed with their shares. Ctrl+Z brings them back`)
-      break
-    }
+    case 'remove-person': removeEditedPerson(); break
+    case 'remove-day-off': snapshot(); removeDayOff(el.dataset.date); afterChange(); break
     case 'estimate': togglePop(`de-${id}`, () => openEstimate(id)); break
     case 'points': togglePop(`sp-${id}-${el.dataset.person}`, () => openPoints(id, el.dataset.person)); break
     case 'unassign': {
@@ -136,11 +134,14 @@ function setAndRender(key, value) {
 }
 
 // ── Changes: settings selects, inline names ──────────────────
+const TEXT_SETTINGS = new Set(['rounding', 'startDate', 'country'])
+
 function onChange(e) {
   const t = e.target
   if (t.dataset.setting) {
     const key = t.dataset.setting
-    const v = key === 'rounding' ? t.value : Number(t.value)
+    if (key === 'startDate' && !parseISO(t.value)) { renderAll(); return }   // cleared or half-typed: keep the old date
+    const v = TEXT_SETTINGS.has(key) ? t.value : Number(t.value)
     setAndRender(key, v)
     return
   }
@@ -191,53 +192,17 @@ function onAddPerson(e) {
   snapshot(); addPerson({ name: name.slice(0, 80), role: role.slice(0, 80) }); afterChange()
   $('personName').value = ''; $('personRole').value = ''
   $('personName').focus()
-  const a = analyze(state.doc)
+  const a = analyze(state.doc, cal)
   showToast(`${name} joins with ${a.unit} pts. Drag them onto a deliverable`)
 }
 
-function openPerson(id) {
-  const p = person(id); if (!p) return
-  const f = $('personEdit')
-  f.dataset.id = id
-  f.elements.name.value = p.name
-  f.elements.role.value = p.role
-  const sprints = state.doc.settings.sprints
-  f.elements.sprintsOff.innerHTML = Array.from({ length: sprints + 1 }, (_, i) =>
-    `<option value="${i}">${i === 0 ? 'None' : plural(i, 'sprint')}</option>`).join('')
-  f.elements.sprintsOff.value = String(Math.min(p.sprintsOff, sprints))
-  const load = f.elements.load
-  if (![...load.options].some(o => Number(o.value) === p.load)) load.insertAdjacentHTML('beforeend', `<option value="${p.load}">${p.load}%</option>`)
-  load.value = String(p.load)
-  f.elements.open.checked = p.open
-  $('personModalTitle').textContent = p.name ? `Edit ${p.name}` : 'Edit person'
-  paintCapNote()
-  openModal('personModal')
-}
-
-function formFields() {
-  const f = $('personEdit')
-  return {
-    name: f.elements.name.value.trim().slice(0, 80),
-    role: f.elements.role.value.trim().slice(0, 80),
-    load: Number(f.elements.load.value),
-    sprintsOff: Number(f.elements.sprintsOff.value),
-    open: f.elements.open.checked,
-  }
-}
-
-function paintCapNote() {
-  const s = state.doc.settings, v = formFields()
-  const raw = rawCapacity(v, s), cap = capacityOf(v, s)
-  const sprints = Math.max(0, s.sprints - v.sprintsOff)
-  $('personCapNote').textContent =
-    `${analyze(state.doc).sprint} pts × ${plural(sprints, 'sprint')} × ${v.load}%${s.buffer ? ` − ${s.buffer}% buffer` : ''} = ${+raw.toFixed(1)}, planned as ${cap}.`
-}
-
-function onSavePerson(e) {
+function onAddDayOff(e) {
   e.preventDefault()
-  const id = $('personEdit').dataset.id
-  if (!person(id)) { closeModal('personModal'); return }
-  snapshot(); updatePerson(id, formFields())
-  closeModal('personModal')
+  const f = e.target, date = f.elements.date.value, label = f.elements.label.value.trim()
+  if (!parseISO(date)) { f.elements.date.focus(); return }
+  snapshot()
+  if (!addDayOff(date, label || 'Team day off')) { showToast('That day is already off'); return }
   afterChange()
+  f.reset()
+  f.elements.date.focus()
 }

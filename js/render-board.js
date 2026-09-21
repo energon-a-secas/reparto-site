@@ -39,7 +39,8 @@ export function renderRoster(a, flags) {
     const pa = a.people.get(p.id)
     const pct = pa.cap ? Math.min(100, (pa.used / pa.cap) * 100) : 0
     const band = pa.free < 0 ? 'over' : pa.free === 0 && pa.cap ? 'full' : 'free'
-    const bits = [p.role && escHtml(p.role), p.load < 100 && `${p.load}%`, p.sprintsOff && `${p.sprintsOff} away`].filter(Boolean).join(' · ')
+    const bits = [p.role && escHtml(p.role), p.load < 100 && `${p.load}%`, p.sprintsOff && `${p.sprintsOff} away`,
+      pa.lost.vacation && `${pa.lost.vacation}d vacation`, p.country && p.country !== state.doc.settings.country && p.country].filter(Boolean).join(' · ')
     const carried = ui.carry?.person === p.id && !ui.carry.from
     return `<li class="person person--${band}${p.open ? ' person--open' : ''}${carried ? ' is-carried' : ''}${focused(p.id) ? ' is-focus' : ''}"
         id="p-${p.id}" data-drag="person" data-person="${p.id}" data-key="p-${p.id}" tabindex="0"
@@ -49,7 +50,7 @@ export function renderRoster(a, flags) {
         <span class="person-name">${escHtml(nameOf(p))}${p.open ? '<span class="tag">open</span>' : ''}</span>
         <span class="person-role">${bits || '&nbsp;'}</span>
       </span>
-      <span class="person-cap" title="${pa.used} booked of ${pa.cap} (${fmt(pa.raw)} before rounding)">
+      <span class="person-cap" title="${pa.used} booked of ${pa.cap} (${fmt(pa.raw)} before rounding${pa.lost.holiday + pa.lost.team + pa.lost.vacation ? `, after ${pa.lost.holiday + pa.lost.team + pa.lost.vacation} days off` : ''})">
         <b>${Math.abs(pa.free)}</b><small>${pa.free < 0 ? 'over' : 'free'} of ${pa.cap}</small>
       </span>
       <button type="button" class="icon-btn" data-action="edit-person" data-id="${p.id}" data-key="pe-${p.id}" aria-label="Edit ${escHtml(nameOf(p))}">${EDIT_ICON}</button>

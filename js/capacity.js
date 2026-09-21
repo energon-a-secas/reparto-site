@@ -5,8 +5,11 @@
 // The chain, with the defaults:
 //   focus days a week  = 5 working days - 1 meeting day            = 4
 //   points a sprint    = 2 weeks x 4 focus days x 1 point a day      = 8
-//   raw per engineer   = 8 points x 4 sprints x 100% load            = 32
-//   planned            = 32 rounded onto the Fibonacci scale         = 34
+//   before days off    = 8 points x 4 sprints                        = 32
+//   raw per engineer   = 32 - holidays, team days off, vacations    (calendar.js)
+//   planned            = raw rounded onto the Fibonacci scale        = 34
+
+import { personSprints, nextQuarterStart } from './calendar.js'
 
 /** The estimation scale. A deliverable is sized with one of these. */
 export const SCALE = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89]
@@ -18,6 +21,8 @@ const FIB = (() => {
 })()
 
 export const DEFAULT_SETTINGS = Object.freeze({
+  startDate: '',        // ISO Monday the first sprint starts; '' = next quarter's first Monday
+  country: '',          // ISO 3166 code whose public holidays count; '' = none
   weeksPerSprint: 2,
   daysPerWeek: 5,
   meetingDay: true,     // one day a week goes to meetings and does not count
@@ -84,37 +89,42 @@ export const focusDays = s => Math.max(0, s.daysPerWeek - (s.meetingDay ? 1 : 0)
 /** Points one sprint can hold for one engineer, before any cap. */
 export const sprintDerived = s => s.weeksPerSprint * focusDays(s) * s.pointsPerDay
 
-/** The cap wins when one is set; otherwise the focus days decide. */
-export const sprintPoints = s => (s.sprintCap > 0 ? s.sprintCap : sprintDerived(s))
+/** The cap is a ceiling: it can hold a sprint below what the focus days give, never lift it above. */
+export const sprintPoints = s => (s.sprintCap > 0 ? Math.min(s.sprintCap, sprintDerived(s)) : sprintDerived(s))
 
-export function sprintsFor(person, s) {
-  const off = Math.max(0, Math.round(person.sprintsOff || 0))
-  return Math.max(0, s.sprints - off)
+/** No holiday data: every lookup comes back empty. Node tests and first paint use it. */
+export const NO_CAL = Object.freeze({ holidays: () => null, status: () => 'none' })
+
+/**
+ * One person's capacity before rounding, and what the calendar took from it.
+ * Sprints away scale the total; load and buffer come last.
+ */
+export function personCapacity(person, doc, cal = NO_CAL) {
+  const s = doc.settings
+  const { sprints, lost } = personSprints(person, doc, cal.holidays)
+  const total = sprints.reduce((t, x) => t + x.points, 0)
+  const away = Math.min(s.sprints, Math.max(0, Math.round(person.sprintsOff || 0)))
+  const share = s.sprints ? (s.sprints - away) / s.sprints : 0
+  const raw = total * share * ((person.load ?? 100) / 100) * (1 - (s.buffer || 0) / 100)
+  return { raw, total, lost, away }
 }
 
-/** Capacity before rounding: the number the arithmetic actually gives. */
-export function rawCapacity(person, s) {
-  const load = (person.load ?? 100) / 100
-  const keep = 1 - (s.buffer || 0) / 100
-  return sprintPoints(s) * sprintsFor(person, s) * load * keep
-}
+export const capacityOf = (person, doc, cal) => roundFib(personCapacity(person, doc, cal).raw, doc.settings.rounding)
 
-export const capacityOf = (person, s) => roundFib(rawCapacity(person, s), s.rounding)
-
-/** A full-time engineer over the whole plan. Gaps are expressed in these. */
-export const engineerUnit = s => capacityOf({ load: 100, sprintsOff: 0 }, s)
+/** A full-time engineer on the team calendar, no vacations. Gaps are expressed in these. */
+const FULL_TIME = Object.freeze({ load: 100, sprintsOff: 0, country: '', vacations: [] })
 
 /**
  * Every derived number the page and the flags read, computed once per render.
  * Unsized deliverables (estimate null) add nothing to demand: they are a
  * missing-data flag, not a zero.
  */
-export function analyze(doc) {
+export function analyze(doc, cal = NO_CAL) {
   const s = doc.settings
   const people = new Map()
   for (const p of doc.people) {
-    const raw = rawCapacity(p, s)
-    people.set(p.id, { raw, cap: roundFib(raw, s.rounding), used: 0, count: 0 })
+    const pc = personCapacity(p, doc, cal)
+    people.set(p.id, { raw: pc.raw, lost: pc.lost, away: pc.away, cap: roundFib(pc.raw, s.rounding), used: 0, count: 0 })
   }
   const deliverables = new Map()
   let demand = 0, allocated = 0, shortfall = 0, unsized = 0
@@ -139,14 +149,33 @@ export function analyze(doc) {
     if (p.open) openCap += a.cap
     if (a.free > 0) free += a.free; else over += -a.free
   }
-  const unit = engineerUnit(s)
+  const ft = personCapacity(FULL_TIME, doc, cal)
+  const base = sprintPoints(s) * s.sprints
   return {
-    sprint: sprintPoints(s), derived: sprintDerived(s), focus: focusDays(s), unit,
-    unitRaw: rawCapacity({ load: 100 }, s),
+    sprint: sprintPoints(s), derived: sprintDerived(s), focus: focusDays(s),
+    base,                                   // 8 x 4 = 32, before the calendar
+    offPts: base - ft.total,                // what holidays and team days took from a full-timer
+    offDays: ft.lost.holiday + ft.lost.team,
+    unitRaw: ft.raw, unit: roundFib(ft.raw, s.rounding),
     people, deliverables, capacity, raw, openCap, hiredCap: capacity - openCap,
     demand, allocated, shortfall, unsized, free, over,
+    calendar: calendarStatus(doc, cal),
   }
 }
+
+/** Which holiday calendars the plan needs, and whether each one arrived. */
+function calendarStatus(doc, cal) {
+  const codes = new Set([doc.settings.country, ...doc.people.map(p => p.country)].filter(Boolean))
+  const out = { needed: [...codes], failed: [], loading: [] }
+  for (const c of codes) {
+    const st = cal.status(c)
+    if (st === 'failed') out.failed.push(c)
+    else if (st === 'loading') out.loading.push(c)
+  }
+  return out
+}
+
+export const defaultStart = () => nextQuarterStart()
 
 /** Points expressed as engineers, one decimal: 21 of a 34 unit is 0.6. */
 export function asEngineers(points, unit) {

@@ -6,13 +6,16 @@ import { loadSaved } from './state.js'
 import { renderAll, afterChange } from './render.js'
 import { bindEvents } from './events.js'
 import { loadFromHash } from './io.js'
+import { onHolidays, loadIndex } from './holidays.js'
 import { showToast } from './utils.js'
 
 function init() {
   loadSaved()
   const shared = loadFromHash()
+  onHolidays(renderAll)
   renderAll()
   bindEvents()
+  loadIndex().then(renderAll)          // the country list fills the pickers once it lands
   if (shared) {
     afterChange()
     showToast('Opened a shared plan. Your own plan is one undo away')
