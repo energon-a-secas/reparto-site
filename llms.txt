@@ -1,0 +1,59 @@
+# Reparto
+
+> Sprint capacity planner. Turn a quarter into story points per engineer (focus days, a meeting day, a sprint cap, public holidays by country, vacations, Fibonacci rounding), split each person's time across deliverables by percentage, and read the flags: unsized work, missing people, over-booking.
+
+- Live: https://reparto.neorgon.com/
+- Part of the Neorgon tool suite (free, no signup, runs in your browser): https://neorgon.com/
+- Keywords: sprint capacity, story points, fibonacci, quarter planning, team allocation, percentages, holidays, vacations, staffing gaps
+- Source: https://github.com/energon-a-secas/reparto-site (`js/state.js` `normalizeDoc()` is the validator; `js/capacity.js` holds the arithmetic)
+
+## The model in one paragraph
+
+A story point is one focus day. A week has 5 working days; with the meeting day on, one goes to meetings, so 4 count. A 2-week sprint holds 8 points (a sprint cap can hold it lower, never higher). A plan is a number of sprints laid on real dates from a start day: 4 by default (two months of a quarter), 6 for the full quarter. One engineer's capacity is the points a sprint over the plan's sprints, minus public holidays for their country, team days off and their vacations, times their load, minus a buffer, then rounded onto the Fibonacci scale (nearest by default: 32 becomes 34, 27 becomes 21). A share is a percentage of one person's planned capacity on one deliverable, so its points follow that capacity; one person's shares are rounded together so they always add up.
+
+## A plan document (JSON)
+
+```json
+{
+  "v": 1,
+  "title": "Q4 plan",
+  "settings": {
+    "startDate": "2026-10-05",
+    "countries": ["CL", "MX"],
+    "weeksPerSprint": 2, "daysPerWeek": 5, "meetingDay": true, "pointsPerDay": 1,
+    "sprintCap": 0, "sprints": 4, "buffer": 0, "rounding": "nearest"
+  },
+  "daysOff": [{ "date": "2026-11-20", "label": "Offsite" }],
+  "people": [
+    { "id": "ana", "name": "Ana Rojas", "role": "Backend", "load": 100, "sprintsOff": 0, "open": false,
+      "country": "CL", "vacations": [{ "from": "2026-10-19", "to": "2026-10-23" }] }
+  ],
+  "deliverables": [
+    { "id": "payments", "name": "Payments API v2", "estimate": 55, "note": "",
+      "members": [{ "person": "ana", "pct": 50 }] }
+  ]
+}
+```
+
+Rules that trip generated documents:
+- `estimate` is one of 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, or `null` for unsized. Anything else becomes `null`.
+- `countries` are ISO 3166 alpha-2 codes; the first is the default for anyone whose `country` is empty. Public holidays exist for 207 countries, 2025 to 2030.
+- `members[].pct` is a percent of that person's capacity (50 means half their plan). A member must name a person `id` from `people`; unknown ids are dropped. An older `{ "person", "points" }` member is kept as fixed points.
+- `sprintCap: 0` means "derive it from the focus days". `rounding` is `nearest`, `up`, `down` or `none`.
+- Dates are `YYYY-MM-DD`. A vacation's `from` and `to` are inclusive.
+
+## Deep link: open a plan in someone's browser
+
+`https://reparto.neorgon.com/#p=<base64url of the JSON>`. Base64url is standard base64 over the UTF-8 bytes with `+` -> `-`, `/` -> `_`, padding stripped. The fragment never reaches a server. The visitor's own plan stays one undo away.
+
+- Python: `import base64, json; print("https://reparto.neorgon.com/#p=" + base64.urlsafe_b64encode(json.dumps(plan).encode()).decode().rstrip("="))`
+- Node: `'https://reparto.neorgon.com/#p=' + Buffer.from(JSON.stringify(plan), 'utf8').toString('base64url')`
+
+A prompt that works: "Produce a Reparto plan (schema: https://reparto.neorgon.com/llms.txt) for this team: <people, countries, vacations, deliverables with Fibonacci estimates, who works on what and roughly what share of their time>. Return the JSON in one code block and a #p= link."
+
+## Exports
+
+From the Plan menu (Export tables and flags):
+- A `.xlsx` workbook: sheets By deliverable, By engineer, Assignments (one row per person per deliverable), Flags, Settings.
+- Any one table as CSV (UTF-8 with a BOM; cells that would run as formulas are prefixed with an apostrophe), as tab-separated text for a paste into Google Sheets or Excel, or as a Markdown table.
+- The whole plan as a Markdown report or as JSON (the document above).
