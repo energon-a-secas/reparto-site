@@ -5,10 +5,12 @@
 // in), so test/tables.test.mjs pins it under Node.
 
 import { shareKey, ROUNDING } from './capacity.js'
-import { computeFlags, deliverableStatus, statusText, missingPeople, CATEGORIES } from './flags.js'
+import { computeFlags, deliverableStatus, statusText, missingPeople, engineers, CATEGORIES } from './flags.js'
 import { planRange, sprintWindows, lastWorkday, fmtDay, parseISO } from './calendar.js'
 
-const cell = s => String(s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+// CommonMark ends a line at LF, CRLF or a lone CR: flatten all three.
+const flat = s => String(s ?? '').replace(/\r\n?|\n/g, ' ')
+const cell = s => flat(s).replace(/\|/g, '\\|')
 const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`
 const pctText = p => `${p < 10 && !Number.isInteger(p) ? Math.round(p * 10) / 10 : Math.round(p)}%`
 const r1 = n => (Number.isInteger(n) ? String(n) : n.toFixed(1))
@@ -30,7 +32,7 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
   const flags = computeFlags(doc, a)
 
   // The formula, one step per change: no "= 32 = 32" when nothing was taken out.
-  const steps = [`${s.weeksPerSprint}-week sprints × ${a.focus} focus days a week × ${s.pointsPerDay} pt = ${a.sprint} pts a sprint`, `× ${s.sprints} sprints = ${a.base}`]
+  const steps = [`${s.weeksPerSprint}-week sprints × ${a.focus} focus days a week × ${s.pointsPerDay} pt = ${a.derived}${a.sprint < a.derived ? `, capped at ${a.sprint}` : ''} pts a sprint`, `× ${s.sprints} sprints = ${a.base}`]
   if (a.offPts) steps.push(`− ${a.offPts} for ${plural(a.offDays, 'day')} off = ${r1(a.unitRaw)}`)
   if (a.unit !== Math.round(a.unitRaw) || !Number.isInteger(a.unitRaw)) steps.push(`→ **${a.unit}** planned (${ROUNDING[s.rounding]})`)
   else steps.push(`→ **${a.unit}** planned`)
@@ -53,7 +55,7 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
   const mp = missingPeople(doc, a)
 
   const lines = [
-    `# ${doc.title}`,
+    `# ${flat(doc.title)}`,
     '',
     `As of ${fmtDay(new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())), true)}.`,
     '',
@@ -65,7 +67,7 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
     '',
     `**Sprints:** ${sprintWindows(s).map(w => `S${w.i + 1} ${fmtDay(w.from)} to ${fmtDay(lastWorkday(w, s.daysPerWeek))} ${a.perSprint[w.i] ?? 0} pts`).join(' · ')}`,
     '',
-    `**Team:** ${a.capacity} pts capacity · ${a.demand} pts demand · ${a.allocated} booked · missing people: ${mp.points} pts${mp.points ? ` (about ${mp.engineers} engineers)` : ''}${mp.unstaffed ? ` · ${mp.unstaffed} unstaffed` : ''}`,
+    `**Team:** ${a.capacity} pts capacity · ${a.demand} pts demand · ${a.allocated} booked · missing people: ${mp.points} pts${mp.points ? ` (${engineers(mp.points, a.bookable || a.unit)})` : ''}${mp.unstaffed ? ` · ${mp.unstaffed} unstaffed` : ''}`,
     '',
     '## Deliverables',
     '',
@@ -100,7 +102,7 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
   ]
   if (flags.length) {
     lines.push('', '## Flags', '')
-    for (const f of flags) lines.push(`- **${{ error: 'Error', warn: 'Warning', info: 'Note' }[f.level]}** (${CATEGORIES[f.cat]}): ${f.text}${f.fix ? ` Suggested fix: ${f.fix.label}.` : ''}`)
+    for (const f of flags) lines.push(`- **${{ error: 'Error', warn: 'Warning', info: 'Note' }[f.level]}** (${CATEGORIES[f.cat]}): ${flat(f.text)}${f.fix ? ` Suggested fix: ${flat(f.fix.label)}.` : ''}`)
   }
   lines.push('', 'Made with [Reparto](https://reparto.neorgon.com/).', '')
   return lines.join('\n')

@@ -25,16 +25,22 @@ export function toCSV(table, { bom = true } = {}) {
   return (bom ? '﻿' : '') + lines.join('\r\n') + '\r\n'
 }
 
-/** Tab-separated, the format a paste into Google Sheets or Excel splits into cells. */
+/**
+ * Tab-separated, the format a paste into Google Sheets or Excel splits into
+ * cells. Both treat a double quote as a text qualifier, so a cell holding one
+ * is quoted and doubled, or '"Kiki" Ramos' loses its quotes and swallows the
+ * rows after it.
+ */
 export function toTSV(table) {
-  const clean = s => s.replace(/[\t\r\n]+/g, ' ')
+  const flatCell = s => s.replace(/[\t\r\n]+/g, ' ')
+  const clean = s => { const t = flatCell(s); return t.includes('"') ? `"${t.replace(/"/g, '""')}"` : t }
   const lines = [table.columns.map(c => clean(c.label)).join('\t')]
   for (const r of table.rows) lines.push(table.columns.map(c => clean(cellText(r[c.key], c.type))).join('\t'))
   return lines.join('\n') + '\n'
 }
 
 export function toMarkdownTable(table) {
-  const esc = s => s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+  const esc = s => s.replace(/\|/g, '\\|').replace(/\r\n?|\n/g, ' ')
   const right = c => c.type !== 'text'
   const plain = (v, t) => (t === 'pct' && v !== null && v !== undefined && v !== '' ? `${v}%` : v === null || v === undefined ? '' : String(v))
   const head = `| ${table.columns.map(c => esc(c.label)).join(' | ')} |`

@@ -5,9 +5,9 @@
 // every keystroke from the same personCapacity() the roster uses, so it
 // cannot disagree with the row.
 
-import { state, snapshot, person, deliverable, updatePerson, removePerson, assign, setShare, unassign } from './state.js'
+import { state, snapshot, commitFrom, person, deliverable, updatePerson, removePerson, assign, setShare, unassign } from './state.js'
 import { analyze, personCapacity, capFromRaw, shareKey, splitPoints } from './capacity.js'
-import { parseISO, addDays, iso, planRange, workdaysIn } from './calendar.js'
+import { parseISO, addDays, iso, planRange, workdaysIn, daysOffFor } from './calendar.js'
 import { cal, countryName, ensureHolidays } from './holidays.js'
 import { countryOptions } from './render-calendar.js'
 import { afterChange } from './render.js'
@@ -158,9 +158,11 @@ function daysOf(v) {
 function paintNote() {
   const s = state.doc.settings, v = fields()
   const range = planRange(s)
+  // Days the calendar already takes (holidays, team days) are not also vacation days.
+  const taken = daysOffFor({ ...fields(), vacations: [] }, state.doc, cal.holidays)
   for (const li of $('vacList').querySelectorAll('.vac-row')) {
     const from = li.querySelector('[name="vfrom"]').value, to = li.querySelector('[name="vto"]').value
-    const n = workdaysIn(daysOf({ from, to }), s)
+    const n = workdaysIn(daysOf({ from, to }).filter(d => !taken.has(d)), s)
     const outside = range && from && to && (parseISO(to) < range.from || parseISO(from) >= range.to)
     li.querySelector('.vac-days').textContent = outside ? 'outside the plan' : plural(n, 'working day')
   }
@@ -196,8 +198,11 @@ function onSave(e) {
   e.preventDefault()
   const id = $('personEdit').dataset.id
   if (!person(id)) { closeModal('personModal'); return }
-  snapshot(); updatePerson(id, fields())
+  // Apply, then keep an undo step only if something changed (an unchanged Save leaves redo alone).
+  const before = JSON.stringify(state.doc)
+  updatePerson(id, fields())
   applyDistribution(id)
+  commitFrom(before)
   closeModal('personModal')
   afterChange()
 }

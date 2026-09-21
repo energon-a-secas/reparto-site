@@ -27,10 +27,10 @@ function decode(text) {
 export const shareUrl = () => `${location.origin}${location.pathname}${PREFIX}${encode(state.doc)}`
 
 /** Load a plan from #p= if present. The replaced plan stays one undo away. */
-export function loadFromHash() {
+export function loadFromHash({ keep = true } = {}) {
   if (!location.hash.startsWith(PREFIX)) return false
   try {
-    resetTo(decode(location.hash.slice(PREFIX.length)))
+    resetTo(decode(location.hash.slice(PREFIX.length)), { keep })
     ui.firstRun = false
     history.replaceState(null, '', location.pathname + location.search)
     return true

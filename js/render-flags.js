@@ -61,7 +61,8 @@ export function renderFlags(flags) {
  * board, and this keeps "move a person, watch a flag go" in view.
  */
 function renderBar(flags, errors, warns) {
-  const top = flags.find(f => f.level !== 'info')
+  // The bar has room for one flag: prefer one that carries a fix, errors first.
+  const top = flags.find(f => f.level === 'error' && f.fix) || flags.find(f => f.level !== 'info' && f.fix) || flags.find(f => f.level !== 'info')
   $('flagBar').innerHTML = top
     ? `<span class="fb-count fb-count--${errors ? 'error' : 'warn'}"><span aria-hidden="true">${errors ? '!' : '•'}</span> ${[errors && plural(errors, 'error'), warns && plural(warns, 'warning')].filter(Boolean).join(' · ')}</span>
        <span class="fb-top">${flagText(top)}${top.fix ? ` ${fixBtn(top)}` : ''}</span>

@@ -11,7 +11,7 @@ For an engineering manager the week before quarter planning.
 
 ```bash
 make serve     # http://localhost:8893 (ES modules: file:// will not load them)
-make test      # node --test: arithmetic, calendar, flags
+make test      # node --test: arithmetic, calendar, flags, exports, review and breaker regressions
 make holidays  # regenerate data/holidays/ (needs npm; installs outside the repo)
 ```
 
@@ -55,7 +55,10 @@ Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,f
 - **CSV text cells that start with `=`, `+`, `-` or `@` get a leading apostrophe.** Excel and Sheets run them as formulas when a CSV is opened, and names come from whoever typed them. The .xlsx writes inline strings, which are never evaluated, so it needs no guard.
 - **The .xlsx is a stored (uncompressed) zip with fixed 1980 timestamps**, so the same plan gives the same bytes. `python3 -c "import zipfile; print(zipfile.ZipFile('plan.xlsx').testzip())"` checks every CRC; openpyxl in a scratch `--target` dir reads it back.
 - **Only the full-time engineer is rounded; everyone else is scaled.** `analyze()` rounds the default-country full-timer onto Fibonacci (31 -> 34), takes `k = unit / unitRaw`, and gives each person `round(raw x k x keep)` (`capFromRaw`), with the buffer (`keep`) applied after rounding. Rounding each person separately made cliffs (a 4th vacation day cost 13 points, 60/75/80% load all planned at 21, a 10% buffer held back nothing), found by all five reviewers on 2026-09-21. Side effect: a one-day change in the default country's calendar often leaves every planned number alone, because the full-timer still rounds to 34 and everyone scales from them; raw shows the change. `test/review.test.mjs` pins the no-cliff numbers.
-- **Every fix lands exactly.** Largest-remainder rounding can land `points / cap` one point off, so fixes and the share popover go through `pctForPoints()` (tries a few nudges on a clone and checks), and trim goes through the pure `trimShares()`. A fix that raises a new flag is a bug.
+- **Every fix lands exactly.** Largest-remainder rounding can land `points / cap` one point off, so fixes and the share popover go through `pctForPoints()`, which walks the 0.01% grid across the half-point window and checks each candidate with `splitPoints` over that person's shares. Removing or merging a share can move a point between the person's other cards, so `trimShares()` and drag moves call `pinShares()` afterwards. A fix that raises a new flag is a bug; `test/breakers.test.mjs` pins the cases a fuzzer found.
+- **A share is stored between 0.01% and 400%** (`PCT_MIN`, `PCT_MAX` in capacity.js; `pct2` and `normalizeDoc` clamp to the same range). A 1% floor used to make big capacities over-book: 1 point of 233 is 0.43%. A trim that would need more than 400% keeps the share as fixed points.
+- **Ids keep to letters, digits, `-` and `_`.** `normalizeDoc` cleans them and remaps members, because share keys (`id:id`) and `data-key` selectors are built from them.
+- **A share link applies on `hashchange` too**, so pasting one into a tab that already has Reparto open works. A first visit that arrives by link keeps nothing (the untouched example is nobody's plan).
 - **One status per deliverable.** `deliverableStatus()` in flags.js feeds the cards, the Markdown report and the tables, and "At risk" (an over-booked or open-role member) beats a green "Staffed". The over-booking flag carries `target.also`, the cards that person is on, so their badges count it.
 - **The sprint cap is a ceiling** (`min(cap, focus days x points)`), not an override: a cap above what the focus days give changes nothing, and a flag says so.
 - **A fully away week costs no meeting day.** The meeting day comes out of each week that still has a working day; a day off on a weekend costs nothing.

@@ -92,8 +92,6 @@
           <div class="header-menu" id="planMenu" role="menu" aria-label="Plan">
             <button type="button" role="menuitem" data-export="link">Copy share link</button>
             <button type="button" role="menuitem" data-action="export">Export tables and flags…</button>
-            <button type="button" role="menuitem" data-export="md">Download the report (Markdown)</button>
-            <button type="button" role="menuitem" data-export="json">Download JSON</button>
             <button type="button" role="menuitem" data-action="import">Import a JSON plan…</button>
             <button type="button" role="menuitem" data-action="previous" id="previousItem" hidden>Restore a previous plan…</button>
             <button type="button" role="menuitem" data-action="example">Load the example</button>
@@ -292,6 +290,10 @@
         <button type="button" class="btn btn--secondary" data-export="csv">Download CSV</button>
         <button type="button" class="btn btn--secondary" data-export="tsv">Copy for Sheets or Excel</button>
         <button type="button" class="btn btn--ghost" data-export="md-table">Copy as Markdown</button>
+        <span class="export-whole">Whole plan:
+          <button type="button" class="btn btn--ghost btn--sm" data-export="md">Report (Markdown)</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-export="json">JSON</button>
+        </span>
       </footer>
     </div>
   </div>

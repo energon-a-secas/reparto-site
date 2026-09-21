@@ -3,7 +3,7 @@
 // never in an undo snapshot). Every mutation is: snapshot(), mutate,
 // afterChange() in render.js, which saves and repaints.
 
-import { DEFAULT_SETTINGS, SCALE, ROUNDING, defaultStart } from './capacity.js'
+import { DEFAULT_SETTINGS, SCALE, ROUNDING, defaultStart, PCT_MIN, PCT_MAX } from './capacity.js'
 import { parseISO } from './calendar.js'
 import { examplePlan } from './seed.js'
 
@@ -27,7 +27,17 @@ const num = (v, lo, hi, dflt) => {
   const n = Number(v)
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt
 }
-const str = (v, max = 80) => (typeof v === 'string' ? v.slice(0, max) : '')
+/** A string cut to `max` UTF-16 units, never leaving half an emoji (a lone high surrogate) at the end. */
+const str = (v, max = 80) => {
+  if (typeof v !== 'string') return ''
+  const s = v.slice(0, max)
+  return /[\ud800-\udbff]$/.test(s) ? s.slice(0, -1) : s
+}
+/**
+ * Ids are keys everywhere (share keys, data-key selectors), so they keep to
+ * letters, digits, - and _: "a:b" and "a" + ":b" used to collide as one share key.
+ */
+const safeId = v => str(String(v ?? ''), 40).replace(/[^A-Za-z0-9_-]/g, '-')
 const dedupe = (list, key) => { const seen = new Set(); return list.filter(x => !seen.has(key(x)) && seen.add(key(x))) }
 const date = v => (parseISO(v) ? v : '')
 const code = v => (typeof v === 'string' && /^[A-Z]{2}$/.test(v) ? v : '')
@@ -72,11 +82,13 @@ export function normalizeDoc(raw) {
   }
   const people = []
   const seen = new Set()
+  const idMap = new Map()     // the id a member names -> the person's id after cleaning
   for (const p of raw.people) {
     if (!p || typeof p !== 'object') continue
-    let id = str(p.id, 40) || newId('p')
+    let id = safeId(p.id) || newId('p')
     if (seen.has(id)) id = newId('p')
     seen.add(id)
+    if (!idMap.has(String(p.id))) idMap.set(String(p.id), id)
     people.push({
       id, name: str(p.name), role: str(p.role),
       load: num(p.load ?? 100, 0, 100, 100),
@@ -89,15 +101,16 @@ export function normalizeDoc(raw) {
   const deliverables = []
   for (const d of raw.deliverables) {
     if (!d || typeof d !== 'object') continue
-    let id = str(d.id, 40) || newId('d')
+    let id = safeId(d.id) || newId('d')
     if (seen.has(id)) id = newId('d')
     seen.add(id)
     const members = []
     for (const m of Array.isArray(d.members) ? d.members : []) {
-      if (!m || !people.some(p => p.id === m.person) || members.some(x => x.person === m.person)) continue
+      const pid = m && idMap.get(String(m.person))
+      if (!pid || members.some(x => x.person === pid)) continue
       // pct is the share of the person's capacity (dynamic); points is a fixed share from before percentages.
-      if (m.pct != null && Number.isFinite(Number(m.pct))) members.push({ person: m.person, pct: Math.round(num(m.pct, 1, 400, 100) * 100) / 100 })
-      else members.push({ person: m.person, points: num(Math.round(m.points), 1, 999, 1) })
+      if (m.pct != null && Number.isFinite(Number(m.pct))) members.push({ person: pid, pct: Math.round(num(m.pct, PCT_MIN, PCT_MAX, 100) * 100) / 100 })
+      else members.push({ person: pid, points: num(Math.round(m.points), 1, 999, 1) })
     }
     const est = Number(d.estimate)
     deliverables.push({
@@ -149,13 +162,29 @@ export function redo() {
   state.doc = JSON.parse(redoStack.pop())
   return true
 }
+/**
+ * Record an undo step for a change already applied, from the plan's JSON
+ * before it, only if something actually changed. Unlike snapshot() first,
+ * an edit that changes nothing leaves undo and redo alone.
+ */
+export function commitFrom(before) {
+  if (JSON.stringify(state.doc) === before) return false
+  undoStack.push(before)
+  if (undoStack.length > UNDO_DEPTH) undoStack.shift()
+  redoStack.length = 0
+  return true
+}
 export const canUndo = () => undoStack.length > 0
 export const canRedo = () => redoStack.length > 0
 
-/** Replace the whole plan (example, import, share link, reset). Undoable, and the replaced plan is kept. */
-export function resetTo(doc) {
+/**
+ * Replace the whole plan (example, import, share link, reset). Undoable, and
+ * the replaced plan is kept, unless `keep` is false (a first visit's untouched
+ * example is nobody's plan).
+ */
+export function resetTo(doc, { keep = true } = {}) {
   const next = normalizeDoc(doc)
-  keepPrevious(next)
+  if (keep) keepPrevious(next)
   snapshot()
   state.doc = next
 }
@@ -233,7 +262,7 @@ export function addDeliverable(fields = {}) {
 export function updateDeliverable(id, fields) { Object.assign(deliverable(id) || {}, fields) }
 export function removeDeliverable(id) { state.doc.deliverables = state.doc.deliverables.filter(d => d.id !== id) }
 
-const pct2 = x => Math.round(Math.min(400, Math.max(1, x)) * 100) / 100
+const pct2 = x => Math.round(Math.min(PCT_MAX, Math.max(PCT_MIN, x)) * 100) / 100
 
 /**
  * Give a person `pct` percent of their capacity on a deliverable. An existing

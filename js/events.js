@@ -241,19 +241,20 @@ function onAddPerson(e) {
   e.preventDefault()
   const name = $('personName').value.trim(), role = $('personRole').value.trim()
   if (!name) { $('personName').focus(); showToast('Give the person a name first'); return }
-  snapshot(); addPerson({ name: name.slice(0, 80), role: role.slice(0, 80) }); afterChange()
+  snapshot(); const added = addPerson({ name: name.slice(0, 80), role: role.slice(0, 80) }); afterChange()
   $('personName').value = ''; $('personRole').value = ''
   $('personName').focus()
   const a = analyze(state.doc, cal)
-  showToast(`${name} joins with ${a.unit} pts. Drag them onto a deliverable`)
+  showToast(`${name} joins with ${a.people.get(added.id)?.cap ?? a.bookable} pts. Drag them onto a deliverable`)
 }
 
 function onAddDayOff(e) {
   e.preventDefault()
   const f = e.target, date = f.elements.date.value, label = f.elements.label.value.trim(), country = f.elements.country.value
   if (!parseISO(date)) { f.elements.date.focus(); return }
+  if (state.doc.daysOff.some(x => x.date === date && (x.country || '') === country)) { showToast('That day is already off'); return }
   snapshot()
-  if (!addDayOff(date, label || 'Team day off', country)) { showToast('That day is already off'); return }
+  addDayOff(date, label || 'Team day off', country)
   afterChange()
   f.reset()
   f.elements.date.focus()

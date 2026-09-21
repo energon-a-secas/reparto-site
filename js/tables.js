@@ -38,7 +38,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
   const people = new Map(doc.people.map(p => [p.id, p]))
   const nameOf = id => people.get(id)?.name.trim() || 'Unnamed'
   const byId = flagsById(flags)
-  const unit = a.bookable || a.unit || 1
+  const unit = a.bookable || a.unit || 0      // no engineer unit: say nothing rather than divide by a made-up 1
 
   if (kind === 'deliverables') {
     return {
@@ -61,7 +61,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
           estimate: d.estimate ?? null,
           booked: da.got,
           gap: da.gap > 0 ? da.gap : 0,
-          engineers: da.gap > 0 ? round1(da.gap / unit) : 0,
+          engineers: da.gap > 0 ? (unit ? round1(da.gap / unit) : null) : 0,
           status: statusText(deliverableStatus(d, da, a, doc)),
           count: d.members.length,
           split: d.members.map(m => {

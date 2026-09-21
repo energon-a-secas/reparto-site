@@ -3,7 +3,7 @@
 // keyboard carry and a flag's fix all land here, so they cannot disagree.
 
 import { state, ui, snapshot, person, deliverable, assign, unassign, moveShare, setShare, addPerson, scaleShares } from './state.js'
-import { analyze, shareKey, pctForPoints, trimShares } from './capacity.js'
+import { analyze, shareKey, pctForPoints, trimShares, pinShares } from './capacity.js'
 import { cal } from './holidays.js'
 import { afterChange, renderAll } from './render.js'
 import { showToast, fmtPct } from './utils.js'
@@ -44,9 +44,16 @@ export function dropPerson(personId, from, target) {
   if (!d || from === target) return false
   if (from) {
     const a = analyze(state.doc, cal)
-    const moved = a.shares.get(shareKey(from, personId))?.pct ?? 0
-    const there = a.shares.get(shareKey(target, personId))?.pct ?? 0
-    snapshot(); moveShare(from, target, personId, moved, there); afterChange()
+    const moved = a.shares.get(shareKey(from, personId))
+    const there = a.shares.get(shareKey(target, personId))
+    // The points the move is about, and the person's other cards, which must not shift by a point.
+    const keep = new Map(state.doc.deliverables.filter(x => x.id !== from && x.id !== target && x.members.some(m => m.person === personId))
+      .map(x => [x.id, a.shares.get(shareKey(x.id, personId)).points]))
+    snapshot()
+    moveShare(from, target, personId, moved?.pct ?? 0, there?.pct ?? 0)
+    keep.set(target, (moved?.points ?? 0) + (there?.points ?? 0))
+    state.doc = pinShares(state.doc, cal, personId, keep)
+    afterChange()
     showToast(`${nameOf(p)}'s share moved to ${d.name || 'the deliverable'}`)
     return true
   }

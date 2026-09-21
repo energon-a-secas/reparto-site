@@ -162,7 +162,7 @@ export function computeFlags(doc, a = analyze(doc)) {
   const openN = doc.people.filter(p => p.open).length
   if (a.demand > a.capacity) {
     const gap = a.demand - a.capacity
-    const hires = Math.max(1, Math.ceil(gap / (unit || gap)))
+    const hires = Math.min(10, Math.max(1, Math.ceil(gap / (unit || gap))))   // the fix adds at most 10 at a time
     add('error', 'people', `The plan needs ${pts(a.demand)} and the team has ${a.capacity}: short ${gap}, ${engineers(gap, unit)}${openN ? ` on top of ${plural(openN, 'open role')}` : ''}.`, null,
       { action: 'open-roles', arg: String(hires), label: `Add ${hires} open role${hires === 1 ? '' : 's'}` })
   } else if (a.openCap && a.demand > a.hiredCap) {

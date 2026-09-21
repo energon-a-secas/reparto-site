@@ -115,8 +115,14 @@ export function personCapacity(person, doc, cal = NO_CAL) {
   return { raw: total * factor, total, lost, away, sprints, factor }
 }
 
-/** A person's bookable points from their raw capacity: the full-timer's rounding factor, then the buffer. */
-export const capFromRaw = (raw, a) => Math.round(raw * a.k * a.keep)
+/**
+ * A person's bookable points from their raw capacity: the full-timer's
+ * rounding factor, then the buffer. raw x unit / unitRaw is exact for the
+ * full-timer (49.4999 was rounding a full-timer one below bookable), and a
+ * calendar that leaves the full-timer nothing falls back to everyone's own raw.
+ */
+export const capFromRaw = (raw, a) =>
+  Math.round((a.unitRaw > 0 && a.unit > 0 ? (raw * a.unit) / a.unitRaw : raw) * a.keep)
 
 /** A full-time engineer on the team calendar, no vacations. Gaps are expressed in these. */
 const FULL_TIME = Object.freeze({ load: 100, sprintsOff: 0, country: '', vacations: [] })
@@ -131,14 +137,14 @@ export function analyze(doc, cal = NO_CAL) {
   const ft = personCapacity(FULL_TIME, doc, cal)
   const unitRaw = ft.raw
   const unit = roundFib(unitRaw, s.rounding)
-  const scale = { k: unitRaw ? unit / unitRaw : 0, keep: 1 - (s.buffer || 0) / 100 }
-  const bookable = Math.round(unit * scale.keep)
+  const scale = { unit, unitRaw, k: unitRaw > 0 && unit > 0 ? unit / unitRaw : 1, keep: 1 - (s.buffer || 0) / 100 }
+  const bookable = capFromRaw(unitRaw, scale)
   const people = new Map()
-  const perSprint = Array.from({ length: s.sprints }, () => 0)
+  const exactSprint = Array.from({ length: s.sprints }, () => 0)
   for (const p of doc.people) {
     const pc = personCapacity(p, doc, cal)
     people.set(p.id, { raw: pc.raw, lost: pc.lost, away: pc.away, cap: capFromRaw(pc.raw, scale), used: 0, pct: 0, count: 0 })
-    pc.sprints.forEach((x, i) => { perSprint[i] += x.points * pc.factor * scale.k * scale.keep })
+    pc.sprints.forEach((x, i) => { exactSprint[i] += x.points * pc.factor * scale.k * scale.keep })
   }
   const shares = shareAnalysis(doc, people)
   const deliverables = new Map()
@@ -175,7 +181,7 @@ export function analyze(doc, cal = NO_CAL) {
     unitRaw, unit,                          // 31 raw, 34 planned: the one number that is rounded
     k: scale.k, keep: scale.keep,           // everyone else: raw x k x keep
     bookable, held: unit - bookable,        // one engineer after the buffer: gaps are counted in these
-    perSprint: perSprint.map(Math.round),   // team points in each sprint, same factors as the caps
+    perSprint: apportion(capacity, exactSprint),   // team points per sprint, adding up to the team capacity
     people, deliverables, shares, capacity, raw, openCap, hiredCap: capacity - openCap,
     demand, allocated, shortfall, unsized, free, over,
     calendar: calendarStatus(doc, cal),
@@ -217,6 +223,12 @@ export function shareAnalysis(doc, people) {
   return out
 }
 
+/** Share `total` whole points across sprints in proportion to their exact values (largest remainder), so the strip adds up to the team capacity. */
+function apportion(total, exact) {
+  const sum = exact.reduce((t, x) => t + x, 0)
+  return sum > 0 ? splitPoints(total, exact.map(x => (x / sum) * 100)) : exact.map(() => 0)
+}
+
 /** Largest remainder: whole points for each percentage of `cap`, adding up to round(cap x total% / 100). */
 export function splitPoints(cap, pcts) {
   const exact = pcts.map(p => (cap * p) / 100)
@@ -235,25 +247,57 @@ const withShare = (doc, delivId, personId, pct) => {
   return next
 }
 
+/** The range a stored share percentage lives in (state.js and normalizeDoc clamp to it). */
+export const PCT_MIN = 0.01, PCT_MAX = 400
+const clampPct = x => Math.round(Math.min(PCT_MAX, Math.max(PCT_MIN, x)) * 100) / 100
+
 /**
  * The percentage that gives a share exactly `points`, without moving the
- * person's other shares. Largest-remainder rounding can land a plain
- * points / cap one point off, so it tries a few nudges and checks each.
+ * person's other percentage shares. Largest-remainder rounding can land a
+ * plain points / cap a point off, so this walks the 0.01% grid across the
+ * half-point window around it, nearest first, and checks each candidate with
+ * splitPoints over that one person's shares. Candidates are clamped to what
+ * storage keeps, so the answer survives a save. Falls back to points / cap.
  */
 export function pctForPoints(doc, cal, delivId, personId, points) {
   const a = analyze(doc, cal)
   const cap = a.people.get(personId)?.cap ?? 0
-  if (!cap) return pctFor(points, cap)
-  const others = doc.deliverables.filter(d => d.id !== delivId && d.members.some(m => m.person === personId))
-    .map(d => [d.id, a.shares.get(shareKey(d.id, personId)).points])
-  for (const nudge of [0, -0.4, 0.4, -0.45, 0.45, -0.25, 0.25]) {
-    const pct = pctFor(points + nudge, cap)
-    if (!(pct > 0)) continue
-    const b = analyze(withShare(doc, delivId, personId, pct), cal)
-    if (b.shares.get(shareKey(delivId, personId))?.points === points
-      && others.every(([id, pts]) => b.shares.get(shareKey(id, personId)).points === pts)) return pct
+  if (!cap) return clampPct(pctFor(points, cap) || PCT_MIN)
+  // The person's percentage shares plus the target card (which may be new, fixed or a percentage):
+  // those are what largest remainder rounds together.
+  const mine = doc.deliverables.filter(d => d.id === delivId || d.members.some(m => m.person === personId && m.pct != null))
+  const at = mine.findIndex(d => d.id === delivId)
+  const list = mine.map(d => d.members.find(m => m.person === personId)?.pct ?? 0)
+  const want = mine.map(d => (d.id === delivId ? points : a.shares.get(shareKey(d.id, personId))?.points ?? 0))
+  const centre = pctFor(points, cap)
+  const lo = Math.max(PCT_MIN, pctFor(points - 0.5, cap)), hi = Math.min(PCT_MAX, pctFor(points + 0.5, cap))
+  const steps = Math.ceil((hi - lo) * 100) + 2
+  for (let i = 0; i <= steps; i++) {
+    for (const sign of i ? [-1, 1] : [1]) {
+      const cand = clampPct(centre + (sign * i) / 100)
+      if (cand < lo - 0.01 || cand > hi + 0.01) continue
+      list[at] = cand
+      const pts = splitPoints(cap, list)
+      if (pts.every((x, j) => x === want[j])) return cand
+    }
   }
-  return pctFor(points, cap)
+  return clampPct(centre)
+}
+
+/**
+ * Pin a person's shares to the points they had: after a share is removed or
+ * merged, largest remainder can move a point between their other cards.
+ * `wanted` is Map(delivId -> points); fixed-points shares are left alone.
+ */
+export function pinShares(doc, cal, personId, wanted) {
+  let work = doc
+  for (const [delivId, pts] of wanted) {
+    const m = work.deliverables.find(d => d.id === delivId)?.members.find(x => x.person === personId)
+    if (!m || m.pct == null) continue
+    const now = analyze(work, cal).shares.get(shareKey(delivId, personId))?.points
+    if (now !== pts) work = withShare(work, delivId, personId, pctForPoints(work, cal, delivId, personId, pts))
+  }
+  return work
 }
 
 /**
@@ -265,15 +309,26 @@ export function trimShares(doc, cal, delivId) {
   let work = structuredClone(doc)
   const d = () => work.deliverables.find(x => x.id === delivId)
   if (!d()?.estimate) return d()?.members || []
-  const a = analyze(work, cal)
-  let extra = a.deliverables.get(delivId).got - d().estimate
+  let extra = analyze(work, cal).deliverables.get(delivId).got - d().estimate
   for (const m of [...d().members].reverse()) {
     if (extra <= 0) break
-    const pts = analyze(work, cal).shares.get(shareKey(delivId, m.person)).points
+    const a = analyze(work, cal)
+    const pts = a.shares.get(shareKey(delivId, m.person)).points
+    const cap = a.people.get(m.person)?.cap ?? 0
     const cut = Math.min(extra, pts)
     extra -= cut
-    if (cut === pts || !(analyze(work, cal).people.get(m.person)?.cap)) d().members = d().members.filter(x => x.person !== m.person)
-    else work = withShare(work, delivId, m.person, pctForPoints(work, cal, delivId, m.person, pts - cut))
+    // What this person has on their other cards, so removing or resizing this share cannot move them.
+    const others = new Map(work.deliverables.filter(x => x.id !== delivId && x.members.some(y => y.person === m.person))
+      .map(x => [x.id, a.shares.get(shareKey(x.id, m.person)).points]))
+    if (cut === pts) {
+      d().members = d().members.filter(x => x.person !== m.person)
+    } else if (!cap || ((pts - cut) / cap) * 100 > PCT_MAX) {
+      // No capacity to take a percentage of, or more than the stored range: keep it as fixed points.
+      const mm = d().members.find(x => x.person === m.person); delete mm.pct; mm.points = pts - cut
+    } else {
+      work = withShare(work, delivId, m.person, pctForPoints(work, cal, delivId, m.person, pts - cut))
+    }
+    work = pinShares(work, cal, m.person, others)
   }
   return d().members
 }
