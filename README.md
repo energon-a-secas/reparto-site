@@ -51,8 +51,14 @@ the one in Mexico alone.
 
 - **The formula is the settings** -- weeks a sprint, working days, the meeting day toggle, points a focus day, a sprint cap, sprints in the plan (Quarter · 6 or Two months · 4), a buffer, and how capacity rounds (nearest Fibonacci, up, down or not at all), each an editable term in one visible chain
 - **Real dates** -- sprints start on the date you pick (next quarter's first Monday by default), each sprint shows the team's points so a holiday-heavy sprint stands out, and the calendar folds to one summary line once it is set
-- **Correct the calendar** -- mark a public holiday as worked, or scope a team day off to one country
-- **Nothing is lost** -- a share link, an import or a new plan keeps the plan it replaced under Plan > Restore a previous plan
+- **Correct the calendar** -- mark a public holiday as worked, or scope a team day off to one country; US federal holidays many private employers work (Columbus Day, Veterans Day) and Argentina's decreed bridge days are labelled, with one click to work them all
+- **Several plans, nothing replaced** -- every plan in this browser is one click away under Plans; a share link, an import, the example or a blank plan opens as a plan of its own, the same plan opened twice is found rather than copied, and a deleted or wiped plan can be restored
+- **Wipe** -- empty the open plan (people, deliverables, days off) and keep its dates and rules, or reset those too; Ctrl+Z brings it back
+- **Table view** -- the plan's deliverables as one sortable table (status, estimate, booked, short, people and their shares) with totals, dragging and every fix still working; it takes the full width, and the choice is remembered
+- **Later and Done** -- move a deliverable to a future plan or mark it shipped: it keeps its size, note and people but stops counting, and moving it back restores its shares as they were
+- **Notes** -- a short note per deliverable (scope, a link, who asked), shown on the card and the table and carried into every export
+- **Which vacation made it short** -- a short deliverable says how much of the gap is someone's leave, by name and dates ("Ana Rojas's vacation, 19 to 23 Oct, takes 4 pts"), on the card, in its flag and in the report
+- **Icons for every state** -- each deliverable status, flag level and person state has its own icon beside its words, and whoever you pick up wears a hand until you put them down
 - **Several countries, one team** -- the United States, Colombia, Chile, Peru, Argentina and Mexico are one tap each, any of 207 countries (2025 to 2030) is a pick away; each person follows their own country's holidays, anyone without one follows the team default, and a flag names who that is
 - **Vacations** -- per-person periods; a day off only costs a focus day on a working day, and a week spent entirely away costs no meeting day either
 - **Drag and drop** -- people from the roster onto deliverables, shares from one card to another, a share back to the roster to remove it; tap or Enter picks someone up for touch and keyboard, and the page scrolls when a drag nears the edge
@@ -63,8 +69,8 @@ the one in Mexico alone.
 - **Flags that point somewhere** -- missing estimates, people with no country, deliverables nobody took, short or over-staffed work, over-booked people, open roles carrying work, a plan bigger than the team; each one jumps to its card, and several carry a one-step fix that lands exactly (top up someone already on it, add the best-matching person, scale an over-booked person to 100%, size it, trim it, pick countries, add open roles)
 - **Totals in points and engineers** -- team capacity, demand, booked and missing, with every gap also expressed as engineers at one full plan each
 - **Works on a phone** -- the page scrolls through the roster, a long press starts a drag, a tap carries someone to a card, and a sticky line above the board keeps the top flag and its fix in view
-- **Spreadsheet and table export** -- a real .xlsx with a sheet per table (by deliverable, by engineer, assignments for pivot tables, the flags, and the settings behind the numbers), or any one table as CSV, a paste straight into Google Sheets or Excel, or a Markdown table; the Flags panel exports its findings in one click, and a live preview shows the rows before they leave
-- **Undo, share, export** -- 40 levels of undo, a share link that carries the plan in its own URL fragment, Markdown for a doc or a Slack thread, JSON in and out
+- **Spreadsheet and table export** -- a real .xlsx with a sheet per table (by deliverable, by engineer, assignments for pivot tables, the flags, Later and Done, and the settings behind the numbers), or any one table as CSV, a paste straight into Google Sheets or Excel, or a Markdown table; the Flags panel exports its findings in one click, and a live preview shows the rows before they leave
+- **Undo, share, export** -- 40 levels of undo per plan, a share link that carries the plan in its own URL fragment, Markdown for a doc or a Slack thread, JSON in and out, all under Export
 - **Nothing leaves the page** -- the plan lives in localStorage; holidays are static files on the same origin
 
 ---
@@ -75,7 +81,7 @@ ES modules require an HTTP server (not `file://`):
 
 ```bash
 make serve    # http://localhost:8893
-make test     # the arithmetic, the calendar and the flags, under Node
+make test     # the arithmetic, the calendar, the flags, plans and exports, under Node
 ```
 
 Regenerating the holiday files (once a year, or to extend the years) needs npm, and
@@ -83,6 +89,7 @@ installs `date-holidays` outside the repo:
 
 ```bash
 make holidays
+make icons     # the same for js/icon-data.js, from lucide-static
 ```
 
 ---
@@ -99,7 +106,8 @@ reparto-site/
 │   └── app.css           # The planner's layout
 ├── js/
 │   ├── app.js            # Entry point: load, render, bind
-│   ├── state.js          # The plan, validation (normalizeDoc), localStorage, undo
+│   ├── state.js          # The plan, validation (normalizeDoc), undo per plan, mutations, Later and Done
+│   ├── plans.js          # Every plan in this browser: open, switch, delete, restore
 │   ├── capacity.js       # Fibonacci scale and rounding, per-person capacity, analyze()
 │   ├── calendar.js       # Sprint dates, holidays, team days off, vacations, focus days
 │   ├── holidays.js       # Loads data/holidays/<CC>.json on demand
@@ -108,10 +116,13 @@ reparto-site/
 │   ├── render.js         # The formula and the totals; afterChange()
 │   ├── render-calendar.js  # Start date, country, sprint dates, days off
 │   ├── render-board.js   # Roster rows and deliverable cards
+│   ├── render-table.js   # The table view, and the Later and Done lists
+│   ├── icons.js          # icon(): inline SVG from icon-data.js (generated from Lucide)
 │   ├── render-flags.js   # The flags panel
 │   ├── dnd.js            # Pointer drag, edge scroll, tap to carry
 │   ├── actions.js        # Drops, carry, flag fixes, jump to a target
-│   ├── popover.js        # Estimate picker and share editor
+│   ├── popover.js        # Estimate picker, share editor, a deliverable's note and moves
+│   ├── confirm.js        # The Wipe and Delete confirmation
 │   ├── person-editor.js  # Load, sprints away, country, vacations
 │   ├── events.js         # Delegated clicks, changes, keys
 │   ├── io.js             # Share link, Markdown report, JSON
@@ -123,6 +134,7 @@ reparto-site/
 │   └── utils.js          # Small helpers
 ├── data/holidays/        # One JSON per country, plus index.json
 ├── tools/build-holidays.cjs  # Regenerates data/holidays/ (make holidays)
+├── tools/build-icons.cjs # Regenerates js/icon-data.js (make icons)
 ├── test/                 # node --test
 ├── docs/architecture.mmd # Diagram source
 ├── CNAME
@@ -132,6 +144,7 @@ reparto-site/
 
 Public holiday data comes from [date-holidays](https://github.com/commenthol/date-holidays)
 (code ISC, data CC BY 3.0), baked into static files so the site never calls a holiday API.
+Icons are [Lucide](https://lucide.dev) (ISC), inlined as SVG.
 
 ---
 

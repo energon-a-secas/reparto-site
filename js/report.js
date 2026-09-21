@@ -5,8 +5,8 @@
 // in), so test/tables.test.mjs pins it under Node.
 
 import { shareKey, ROUNDING } from './capacity.js'
-import { computeFlags, deliverableStatus, statusText, missingPeople, engineers, CATEGORIES } from './flags.js'
-import { planRange, sprintWindows, lastWorkday, fmtDay, parseISO } from './calendar.js'
+import { computeFlags, deliverableStatus, statusText, missingPeople, engineers, leaveLines, CATEGORIES } from './flags.js'
+import { planRange, sprintWindows, lastWorkday, fmtDay, fmtSpan, parseISO } from './calendar.js'
 
 // CommonMark ends a line at LF, CRLF or a lone CR: flatten all three.
 const flat = s => String(s ?? '').replace(/\r\n?|\n/g, ' ')
@@ -14,15 +14,6 @@ const cell = s => flat(s).replace(/\|/g, '\\|')
 const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`
 const pctText = p => `${p < 10 && !Number.isInteger(p) ? Math.round(p * 10) / 10 : Math.round(p)}%`
 const r1 = n => (Number.isInteger(n) ? String(n) : n.toFixed(1))
-
-/** "19 to 23 Oct", or "30 Dec 2026 to 2 Jan 2027" across a year. */
-function span(from, to) {
-  const a = parseISO(from), b = parseISO(to)
-  if (!a || !b) return ''
-  const [x, y] = a <= b ? [a, b] : [b, a]
-  const sameYear = x.getUTCFullYear() === y.getUTCFullYear()
-  return `${fmtDay(x, !sameYear)} to ${fmtDay(y, !sameYear)}`
-}
 
 export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date() } = {}) {
   const s = doc.settings
@@ -71,12 +62,14 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
     '',
     '## Deliverables',
     '',
-    '| Deliverable | Estimate | Booked | People | Status |',
-    '|---|---:|---:|---|---|',
+    '| Deliverable | Estimate | Booked | People | Status | Note |',
+    '|---|---:|---:|---|---|---|',
     ...doc.deliverables.map(d => {
       const da = a.deliverables.get(d.id)
       const who = d.members.map(m => { const sh = a.shares.get(shareKey(d.id, m.person)); return `${name(m.person)} ${sh.points} (${pctText(sh.pct)})` })
-      return `| ${cell(d.name.trim() || 'Untitled deliverable')} | ${d.estimate ?? '?'} | ${da.got} | ${cell(who.join(', ') || 'none')} | ${cell(statusText(deliverableStatus(d, da, a, doc)))} |`
+      // A short deliverable says which leave made it short.
+      const leave = da.gap > 0 && da.leavePts ? `; leave: ${leaveLines(da, doc).join(', ')}` : ''
+      return `| ${cell(d.name.trim() || 'Untitled deliverable')} | ${d.estimate ?? '?'} | ${da.got} | ${cell(who.join(', ') || 'none')} | ${cell(statusText(deliverableStatus(d, da, a, doc)) + leave)} | ${cell(d.note) || ' '} |`
     }),
     '',
     '## People',
@@ -85,7 +78,7 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
     '|---|---|---|---|---:|---:|---:|---:|---|',
     ...doc.people.map(p => {
       const pa = a.people.get(p.id)
-      const vac = (p.vacations || []).map(v => span(v.from, v.to)).filter(Boolean).join(', ')
+      const vac = (p.vacations || []).map(v => fmtSpan(v.from, v.to)).filter(Boolean).join(', ')
       const off = [
         pa.lost.holiday && `${pa.lost.holiday} holiday`,
         pa.lost.team && `${pa.lost.team} team`,
@@ -100,6 +93,16 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
       return `| ${cell(p.name.trim() || 'Unnamed')}${p.open ? ' (open role)' : ''} | ${cell(p.role) || 'none'} | ${cell(country)} | ${cell(off)} | ${pa.cap} | ${pa.used} | ${pctText(pa.pct)} | ${pa.free} | ${cell(on)} |`
     }),
   ]
+  // Out of the plan: listed so the report says where they went, never counted.
+  for (const [when, title] of [['later', 'Later'], ['done', 'Done']]) {
+    const list = (doc.backlog || []).filter(d => d.when === when)
+    if (!list.length) continue
+    lines.push('', `## ${title}`, '', `Not counted in this plan.`, '')
+    for (const d of list) {
+      const who = d.members.map(m => name(m.person)).join(', ')
+      lines.push(`- ${flat(d.name.trim() || 'Untitled deliverable')}${d.estimate ? `, ${d.estimate} pts` : ', unsized'}${who ? `, ${flat(who)}` : ''}${d.note ? `: ${flat(d.note)}` : ''}`)
+    }
+  }
   if (flags.length) {
     lines.push('', '## Flags', '')
     for (const f of flags) lines.push(`- **${{ error: 'Error', warn: 'Warning', info: 'Note' }[f.level]}** (${CATEGORIES[f.cat]}): ${flat(f.text)}${f.fix ? ` Suggested fix: ${flat(f.fix.label)}.` : ''}`)

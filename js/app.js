@@ -2,7 +2,8 @@
 // Load the plan (share link first, then the saved session, else the
 // example), paint it, wire the inputs. Nothing else lives here.
 
-import { loadSaved } from './state.js'
+import { ui } from './state.js'
+import { loadSaved } from './plans.js'
 import { renderAll, afterChange } from './render.js'
 import { bindEvents } from './events.js'
 import { loadFromHash } from './io.js'
@@ -10,20 +11,22 @@ import { onHolidays, loadIndex } from './holidays.js'
 import { showToast } from './utils.js'
 
 function init() {
+  try { if (localStorage.getItem('reparto-v1-view') === 'table') ui.view = 'table' } catch { /* a convenience only */ }
   const hadPlan = loadSaved()
-  const shared = loadFromHash({ keep: hadPlan })    // a first visit's example is nobody's plan to keep
+  const shared = loadFromHash()      // a first visit's untouched example is not stored, so the link is the only plan
   onHolidays(renderAll)
   renderAll()
   bindEvents()
   loadIndex().then(renderAll)          // the country list fills the pickers once it lands
-  if (shared) opened(hadPlan)
+  if (shared) opened(shared, hadPlan)
   // A share link pasted into a tab that already has Reparto open changes only the hash.
-  window.addEventListener('hashchange', () => { if (loadFromHash()) opened(true) })
+  window.addEventListener('hashchange', () => { const r = loadFromHash(); if (r) opened(r, true) })
 }
 
-function opened(kept) {
+function opened(r, hadPlan) {
   afterChange()
-  showToast(kept ? 'Opened a shared plan. Yours is kept under Plan > Restore a previous plan' : 'Opened a shared plan')
+  showToast(r.existing ? 'That shared plan was already here, so it is open now'
+    : hadPlan ? 'Opened a shared plan as a plan of its own. Yours are under Plans' : 'Opened a shared plan')
 }
 
 init()

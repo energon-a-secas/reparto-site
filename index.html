@@ -82,21 +82,38 @@
 
     <div class="header-right">
       <div class="header-actions">
-        <button type="button" class="nav-link" id="undoBtn" data-action="undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
-        <button type="button" class="nav-link" id="redoBtn" data-action="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
-        <!-- One menu for everything plan-wide. It stays in the header on phones
-             (data-keep-mobile): a dropdown inside the kit's overflow panel is clipped
-             by the panel's own scroll box. -->
+        <button type="button" class="nav-link" id="undoBtn" data-action="undo" title="Undo (Ctrl+Z)" disabled><span data-icon="undo-2"></span><span>Undo</span></button>
+        <button type="button" class="nav-link" id="redoBtn" data-action="redo" title="Redo (Ctrl+Shift+Z)" disabled><span data-icon="redo-2"></span><span>Redo</span></button>
+        <button type="button" class="nav-link" id="wipeBtn" data-action="wipe" title="Empty this plan: its people, deliverables and days off"><span data-icon="eraser"></span><span>Wipe</span></button>
+        <button type="button" class="nav-link" data-action="help" title="How the numbers work"><span data-icon="circle-help"></span><span>Help</span></button>
+        <!-- Every label sits in its own <span>: the header kit squares off a
+             button whose only element child is an <svg> as icon-only.
+             The two menus stay in the header on phones (data-keep-mobile): a
+             dropdown inside the kit's overflow panel is clipped by the panel's
+             own scroll box. Each closes only itself (js/events.js setupMenu). -->
         <div class="menu-wrap" data-keep-mobile>
-          <button type="button" class="nav-link" id="planBtn" aria-haspopup="menu" aria-expanded="false">Plan ▾</button>
-          <div class="header-menu" id="planMenu" role="menu" aria-label="Plan">
-            <button type="button" role="menuitem" data-export="link">Copy share link</button>
-            <button type="button" role="menuitem" data-action="export">Export tables and flags…</button>
-            <button type="button" role="menuitem" data-action="import">Import a JSON plan…</button>
-            <button type="button" role="menuitem" data-action="previous" id="previousItem" hidden>Restore a previous plan…</button>
-            <button type="button" role="menuitem" data-action="example">Load the example</button>
-            <button type="button" role="menuitem" data-action="blank">Start a blank plan</button>
-            <button type="button" role="menuitem" data-action="help">How the numbers work</button>
+          <button type="button" class="nav-link" id="plansBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="plansMenu" aria-label="Plans"><span data-icon="layers"></span><span class="nav-label">Plans</span> ▾</button>
+          <div class="header-menu menu--plans" id="plansMenu" role="menu" aria-label="Plans">
+            <div role="group" aria-label="Your plans" id="planList"></div>
+            <div role="group" aria-label="Add a plan">
+              <button type="button" role="menuitem" data-action="blank"><span data-icon="plus"></span>New blank plan</button>
+              <button type="button" role="menuitem" data-action="duplicate"><span data-icon="copy"></span>Duplicate this plan</button>
+              <button type="button" role="menuitem" data-action="example"><span data-icon="lightbulb"></span>Open the example</button>
+              <button type="button" role="menuitem" data-action="import"><span data-icon="file-up"></span>Import a plan file (JSON)…</button>
+              <button type="button" role="menuitem" data-action="previous" id="previousItem" hidden><span data-icon="history"></span>Restore a deleted plan…</button>
+            </div>
+            <div role="group" aria-label="This plan">
+              <button type="button" role="menuitem" data-action="delete-plan" class="menu-danger"><span data-icon="trash-2"></span>Delete this plan…</button>
+            </div>
+          </div>
+        </div>
+        <div class="menu-wrap" data-keep-mobile>
+          <button type="button" class="nav-link" id="exportBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="exportMenu" aria-label="Export"><span data-icon="download"></span><span class="nav-label">Export</span> ▾</button>
+          <div class="header-menu" id="exportMenu" role="menu" aria-label="Export">
+            <button type="button" role="menuitem" data-export="link"><span data-icon="link"></span>Copy share link</button>
+            <button type="button" role="menuitem" data-action="export"><span data-icon="sheet"></span>Tables and flags (.xlsx, CSV)…</button>
+            <button type="button" role="menuitem" data-export="md"><span data-icon="file-text"></span>Report (Markdown)</button>
+            <button type="button" role="menuitem" data-export="json"><span data-icon="file-json"></span>Plan file (JSON)</button>
           </div>
         </div>
       </div>
@@ -145,6 +162,7 @@
             <p class="cal-range" id="calRange"></p>
           </div>
           <ol class="sprint-strip" id="sprintStrip" aria-label="Sprint dates"></ol>
+          <p class="cal-note" id="calNote"></p>
           <div class="cal-days">
             <p class="cal-days-head" id="calDaysHead"></p>
             <ul class="day-chips" id="dayChips"></ul>
@@ -190,11 +208,13 @@
           <div class="board-head">
             <h2 class="sr-only" id="boardTitle">Deliverables</h2>
             <input class="plan-title" id="planTitle" data-key="plan-title" aria-label="Plan name" maxlength="80">
-            <button type="button" class="btn btn--secondary btn--sm" data-action="add-deliverable">Add deliverable</button>
+            <button type="button" class="btn btn--secondary btn--sm" id="addDelivBtn" data-action="add-deliverable">Add deliverable</button>
           </div>
+          <div class="board-bar" id="boardBar"></div>
           <div class="flag-bar" id="flagBar"></div>
           <div class="carry-bar" id="carryBar" role="status" hidden></div>
           <div class="board-grid" id="board"></div>
+          <div class="table-wrap" id="boardTable" hidden></div>
         </section>
         </div>
 
@@ -298,20 +318,42 @@
     </div>
   </div>
 
-  <!-- Plans replaced by a share link, an import or a reset, kept in this browser -->
+  <!-- Plans deleted or wiped in this browser, kept to restore -->
   <div class="modal" id="previousModal" hidden>
     <div class="modal__backdrop" data-modal-close tabindex="-1" aria-hidden="true"></div>
     <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="previousTitle" tabindex="-1">
       <header class="modal__header">
-        <h2 id="previousTitle">Restore a previous plan</h2>
+        <h2 id="previousTitle">Restore a deleted plan</h2>
         <button type="button" class="btn btn--ghost btn--icon" data-modal-close aria-label="Close dialog">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </header>
       <div class="modal__body">
-        <p class="form-note">The last plans a share link, an import or a new plan replaced, newest first. Restoring one keeps the current plan here too.</p>
+        <p class="form-note">Plans you deleted or wiped in this browser, newest first. Restoring one opens it as a plan of its own; nothing is replaced.</p>
         <ul class="previous-list" id="previousList"></ul>
       </div>
+    </div>
+  </div>
+
+  <!-- Confirm: wipe a plan, delete a plan (js/confirm.js fills it) -->
+  <div class="modal" id="confirmModal" hidden>
+    <div class="modal__backdrop" data-modal-close tabindex="-1" aria-hidden="true"></div>
+    <div class="modal__dialog modal__dialog--narrow" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmBody" tabindex="-1">
+      <header class="modal__header">
+        <h2 id="confirmTitle"></h2>
+        <button type="button" class="btn btn--ghost btn--icon" data-modal-close aria-label="Close dialog">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </header>
+      <div class="modal__body confirm-body">
+        <p class="form-note" id="confirmBody"></p>
+        <label class="check" id="confirmCheckWrap" hidden><input type="checkbox" id="confirmCheck"> <span id="confirmCheckText"></span></label>
+        <p class="form-note confirm-safe" id="confirmSafe"></p>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="btn btn--ghost" data-modal-close>Cancel</button>
+        <button type="button" class="btn btn--danger" id="confirmOk"></button>
+      </footer>
     </div>
   </div>
 
@@ -332,6 +374,7 @@
         <p><strong>Load and sprints away</strong> scale one person: half-time on this team over four sprints is 16 raw, 17 planned. <strong>Buffer</strong> comes off after rounding and holds back a percentage of everyone's capacity for support and unplanned work: 10% of 34 leaves 31 bookable.</p>
         <p><strong>The calendar takes days out.</strong> Sprints start on the date you pick. Public holidays come from the country you choose for the team (anyone can have their own), team days off apply to everyone, and vacations belong to one person. A day off only costs a focus day when it lands on a working day, and a week someone spends entirely away costs no meeting day either.</p>
         <p><strong>A share is a percentage of what someone has for this plan</strong>, after load, days off and buffer, and its points follow that capacity: 50% of an engineer planned at 34 is 17 points, and if a vacation brings them to 30 it becomes 15 without anyone touching it. A person can hold shares on as many deliverables as you like, and a deliverable can have as many people. Dropping someone on a card gives it what they have free, up to what it still needs; someone already fully booked still gets one sprint's worth, and the over-booking flag says so. Click the number on a share to set a percentage, or a number of points kept as the matching percentage; the pencil on their row shows and edits their whole split.</p>
+        <p><strong>Plans, Later and Done.</strong> Every plan lives in this browser under <em>Plans</em>: a share link, an import or the example opens as a plan of its own, so nothing replaces yours. A deliverable you move to <em>Later</em> (a future plan) or <em>Done</em> (shipped) keeps its people but stops counting; move it back and its shares return as they were. <em>Wipe</em> empties the open plan, and Ctrl+Z brings it back.</p>
         <h3>Keys</h3>
         <ul class="keys">
           <li><kbd>Enter</kbd> on a person or a share picks it up; <kbd>Enter</kbd> on a deliverable drops it there; <kbd>Esc</kbd> puts it back</li>

@@ -31,6 +31,10 @@ A story point is one focus day. A week has 5 working days; with the meeting day 
   "deliverables": [
     { "id": "payments", "name": "Payments API v2", "estimate": 55, "note": "",
       "members": [{ "person": "ana", "pct": 50 }] }
+  ],
+  "backlog": [
+    { "id": "search", "name": "Search relevance", "estimate": 21, "note": "Next quarter",
+      "members": [], "when": "later" }
   ]
 }
 ```
@@ -42,10 +46,12 @@ Rules that trip generated documents:
 - `sprintCap: 0` means "derive it from the focus days". `rounding` is `nearest`, `up`, `down` or `none`.
 - Dates are `YYYY-MM-DD`. A vacation's `from` and `to` are inclusive.
 - `daysOff[].country` scopes a team day off to one country's people ('' is everyone). `settings.worked: [{ "country": "US", "date": "2026-10-12" }]` counts a public holiday as a working day there.
+- `backlog` (optional) holds deliverables out of this plan: `when` is `"later"` (a future plan) or `"done"` (shipped). Same shape as a deliverable; they count toward nothing.
+- `note` is free text up to 400 characters, shown on the card and carried into every export.
 
 ## Deep link: open a plan in someone's browser
 
-`https://reparto.neorgon.com/#p=<base64url of the JSON>`. Base64url is standard base64 over the UTF-8 bytes with `+` -> `-`, `/` -> `_`, padding stripped. The fragment never reaches a server. The visitor's own plan is kept under Plan > Restore a previous plan.
+`https://reparto.neorgon.com/#p=<base64url of the JSON>`. Base64url is standard base64 over the UTF-8 bytes with `+` -> `-`, `/` -> `_`, padding stripped. The fragment never reaches a server. It opens as a plan of its own beside the visitor's plans (under Plans), so nothing of theirs is replaced; the same plan opened twice is switched to, not copied.
 
 - Python: `import base64, json; print("https://reparto.neorgon.com/#p=" + base64.urlsafe_b64encode(json.dumps(plan).encode()).decode().rstrip("="))`
 - Node: `'https://reparto.neorgon.com/#p=' + Buffer.from(JSON.stringify(plan), 'utf8').toString('base64url')`
@@ -54,7 +60,7 @@ A prompt that works: "Produce a Reparto plan (schema: https://reparto.neorgon.co
 
 ## Exports
 
-From the Plan menu (Export tables and flags):
-- A `.xlsx` workbook: sheets By deliverable, By engineer, Assignments (one row per person per deliverable), Flags, Settings.
+From the Export menu (Tables and flags):
+- A `.xlsx` workbook: sheets By deliverable (with the note and the points lost to leave), By engineer, Assignments (one row per person per deliverable), Flags, Later and done, Settings.
 - Any one table as CSV (UTF-8 with a BOM; cells that would run as formulas are prefixed with an apostrophe), as tab-separated text for a paste into Google Sheets or Excel, or as a Markdown table.
-- The whole plan as a Markdown report or as JSON (the document above).
+- The whole plan as a Markdown report (with Later and Done sections, and the leave that made a deliverable short) or as JSON (the document above).

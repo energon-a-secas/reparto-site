@@ -179,13 +179,4 @@ test('23. the scale reaches 144 and 233', () => {
   assert.deepEqual(doc.deliverables.map(d => d.estimate), [144, 233])
 })
 
-test('4. a replaced plan is kept, newest first, five at most', () => {
-  const store = {}
-  globalThis.localStorage = { getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = v } }
-  st.state.doc = st.normalizeDoc({ ...example(), title: 'Mine' })
-  st.resetTo(blankPlan())
-  assert.equal(st.previousPlans()[0].title, 'Mine')
-  for (let i = 0; i < 7; i++) { st.state.doc = st.normalizeDoc({ ...example(), title: `Plan ${i}` }); st.resetTo(blankPlan()) }
-  assert.equal(st.previousPlans().length, 5)
-  assert.equal(st.previousPlans()[0].title, 'Plan 6')
-})
+// Item 4 (a replaced plan is kept) became named plans: nothing is replaced any more. test/plans.test.mjs covers it.

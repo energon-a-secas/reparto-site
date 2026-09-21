@@ -20,6 +20,7 @@ const HINTS = {
   engineers: 'One row per person: capacity after holidays, vacations and load, what is booked, how their time is split across deliverables, and their flags.',
   assignments: 'One row per person per deliverable, with their share and its points: the shape a pivot table wants.',
   flags: 'Every flag the plan raises: its level, category, what it is about, and the suggested fix.',
+  backlog: 'The deliverables moved out of this plan, to Later or Done: their size, who was on them and their note. They count toward nothing.',
 }
 const PREVIEW_ROWS = 8
 let current = 'deliverables'
@@ -50,7 +51,7 @@ function render() {
         <tbody>${t.rows.slice(0, PREVIEW_ROWS).map(r => `<tr>${t.columns.map(c => `<td class="${c.type === 'text' ? '' : 'num'}">${escHtml(cell(r[c.key], c.type))}</td>`).join('')}</tr>`).join('')}</tbody>
       </table>
       <p class="xtable-foot">${plural(t.rows.length, 'row')}${t.rows.length > PREVIEW_ROWS ? `, the first ${PREVIEW_ROWS} shown` : ''} · ${plural(t.columns.length, 'column')}</p>`
-    : `<p class="xtable-foot">This table is empty: ${current === 'flags' ? 'nothing is flagged.' : 'add people and deliverables first.'}</p>`
+    : `<p class="xtable-foot">This table is empty: ${current === 'flags' ? 'nothing is flagged.' : current === 'backlog' ? 'nothing is in Later or Done.' : 'add people and deliverables first.'}</p>`
 }
 
 /** Switch tables from the segmented control, by click or arrow keys. */

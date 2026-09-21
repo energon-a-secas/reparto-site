@@ -16,6 +16,18 @@ const Holidays = require('date-holidays')
 const pkg = require('date-holidays/package.json')
 
 const YEARS = [2025, 2026, 2027, 2028, 2029, 2030]
+
+// Beyond the public list, two kinds of day a planner asks about, tagged so the
+// page can say what they are and offer to work them all in one click:
+//   bridge        Argentina's decreed non-working days (bridge days, tourism
+//                 days). date-holidays types them bank or optional, not
+//                 public; they are counted as days off, like the decree says.
+//                 They are set a year at a time, so later years have none yet.
+//   often-worked  US federal holidays many private employers work.
+const EXTRA = { AR: /Bridge Day|Non-Working Day/ }
+const OFTEN_WORKED = { US: /^(Columbus Day|Veterans Day)/ }
+// English names date-holidays spells the British way for the US.
+const RENAME = { US: { 'Labour Day': 'Labor Day' } }
 const OUT = path.join(__dirname, '..', 'data', 'holidays')
 
 const addDays = (iso, n) => {
@@ -33,15 +45,23 @@ for (const [code, name] of Object.entries(countries)) {
   const lang = en.getLanguages()[0] || 'en'
   const years = {}
   let count = 0
+  const tags = {}
   for (const y of YEARS) {
     const local = new Map(en.getHolidays(y, lang).map(h => [`${h.date}|${h.rule}`, h.name]))
     const rows = []
     for (const h of en.getHolidays(y, 'en')) {
-      if (h.type !== 'public') continue
+      const bridge = h.type !== 'public' && EXTRA[code]?.test(h.name)
+      if (h.type !== 'public' && !bridge) continue
       const day = h.date.slice(0, 10)
       const span = Math.max(1, Math.round((h.end - h.start) / 86400000))
+      const name = RENAME[code]?.[h.name] || h.name
       const native = local.get(`${h.date}|${h.rule}`) || h.name
-      for (let i = 0; i < span; i++) rows.push([addDays(day, i), h.name, native === h.name ? undefined : native].filter(Boolean))
+      for (let i = 0; i < span; i++) {
+        const date = addDays(day, i)
+        rows.push([date, name, native === name ? undefined : native].filter(Boolean))
+        if (bridge) tags[date] = 'bridge'
+        else if (OFTEN_WORKED[code]?.test(h.name)) tags[date] = 'often-worked'
+      }
     }
     // One entry per day: two rules can land on the same date.
     const seen = new Set()
@@ -49,7 +69,9 @@ for (const [code, name] of Object.entries(countries)) {
     count += years[y].length
   }
   if (!count) continue
-  fs.writeFileSync(path.join(OUT, `${code}.json`), JSON.stringify({ country: code, name, source: `date-holidays ${pkg.version}`, years }))
+  const out = { country: code, name, source: `date-holidays ${pkg.version}`, years }
+  if (Object.keys(tags).length) out.tags = tags
+  fs.writeFileSync(path.join(OUT, `${code}.json`), JSON.stringify(out))
   index.push({ code, name })
 }
 

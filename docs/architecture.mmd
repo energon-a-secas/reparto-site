@@ -21,7 +21,7 @@ flowchart TB
     User([Planner]) --> HTML["index.html\nFormula, calendar, roster, board, flags"]
 
     subgraph Model["Model (pure, Node-tested)"]
-        state["state.js\nPlan + normalizeDoc + undo"]
+        state["state.js\nPlan + normalizeDoc + undo per plan\nLater and Done"]
         calendar["calendar.js\nSprint dates, days off, focus days"]
         capacity["capacity.js\nFibonacci rounding, analyze()"]
         flags["flags.js\nMissing data, missing people, load"]
@@ -30,7 +30,7 @@ flowchart TB
 
     subgraph View["View and input (ES modules)"]
         app["app.js\nEntry point"]
-        render["render*.js\nFormula, totals, roster, cards, flags"]
+        render["render*.js\nFormula, totals, roster,\ncards or table, flags"]
         dnd["dnd.js\nPointer drag, tap to carry"]
         events["events.js + popover.js\nClicks, keys, pickers"]
         actions["actions.js\nDrops and flag fixes"]
@@ -49,5 +49,8 @@ flowchart TB
     holidays["holidays.js\nOn-demand loader"] -->|"cal.holidays(CC, year)"| calendar
     holidays -->|"fetch, same origin"| Data[("data/holidays/CC.json\n207 countries, 2025 to 2030")]
     Build["tools/build-holidays.cjs\n(date-holidays, run once)"] -.->|"generates"| Data
-    state <-->|"reparto-v1"| Storage[("localStorage")]
+    plans["plans.js\nEvery plan: open, switch,\ndelete, restore"]
+    plans -->|"open, switch"| state
+    plans <-->|"reparto-v1-plans"| Storage[("localStorage")]
+    io -->|"a link or an import\nopens as a new plan"| plans
     io -->|"#p= fragment"| Link(["Share link"])

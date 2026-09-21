@@ -5,9 +5,9 @@
 
 import { ui } from './state.js'
 import { CATEGORIES } from './flags.js'
+import { icon, LEVEL_ICON } from './icons.js'
 import { $, escHtml, plural } from './utils.js'
 
-const ICON = { error: '!', warn: '•', info: 'i' }
 const LEVEL = { error: 'Error', warn: 'Warning', info: 'Note' }
 
 /** The flag's own text, as a button to its target when it has one. */
@@ -40,7 +40,7 @@ export function renderFlags(flags) {
 
   $('flagList').innerHTML = shown.length
     ? shown.map(f => `<li class="flag flag--${f.level}">
-        <span class="flag-icon" aria-hidden="true">${ICON[f.level]}</span>
+        <span class="flag-icon">${icon(LEVEL_ICON[f.level], { size: 18 })}</span>
         <span class="sr-only">${LEVEL[f.level]}: </span>
         <div class="flag-body">
           ${flagText(f)}
@@ -64,8 +64,8 @@ function renderBar(flags, errors, warns) {
   // The bar has room for one flag: prefer one that carries a fix, errors first.
   const top = flags.find(f => f.level === 'error' && f.fix) || flags.find(f => f.level !== 'info' && f.fix) || flags.find(f => f.level !== 'info')
   $('flagBar').innerHTML = top
-    ? `<span class="fb-count fb-count--${errors ? 'error' : 'warn'}"><span aria-hidden="true">${errors ? '!' : '•'}</span> ${[errors && plural(errors, 'error'), warns && plural(warns, 'warning')].filter(Boolean).join(' · ')}</span>
+    ? `<span class="fb-count fb-count--${errors ? 'error' : 'warn'}">${icon(errors ? 'octagon-alert' : 'triangle-alert', { size: 15 })} ${[errors && plural(errors, 'error'), warns && plural(warns, 'warning')].filter(Boolean).join(' · ')}</span>
        <span class="fb-top">${flagText(top)}${top.fix ? ` ${fixBtn(top)}` : ''}</span>
        <a class="fb-all" href="#flags">All flags</a>`
-    : '<span class="fb-count fb-count--ok"><span aria-hidden="true">✓</span> Nothing missing</span>'
+    : `<span class="fb-count fb-count--ok">${icon('circle-check', { size: 15 })} Nothing missing</span>`
 }

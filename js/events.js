@@ -3,26 +3,33 @@
 // and inline names), one keydown handler. No inline onclick anywhere.
 
 import {
-  state, ui, snapshot, undo, redo, resetTo, setSetting, person, deliverable, saveState,
-  addPerson, addDeliverable, updateDeliverable, removeDeliverable, unassign, addDayOff, removeDayOff, setWorked, previousPlans,
+  state, ui, snapshot, undo, redo, setSetting, deliverable, findDeliverable, person,
+  addPerson, addDeliverable, addBacklogItem, updateDeliverable, unassign, addDayOff, removeDayOff, setWorked, wipe,
 } from './state.js'
+import {
+  saveState, switchPlan, newBlankPlan, openExample, duplicatePlan, deletePlan, previousPlans, keepPrevious, restorePrevious, listPlans,
+} from './plans.js'
 import { analyze } from './capacity.js'
 import { parseISO } from './calendar.js'
-import { cal } from './holidays.js'
+import { cal, taggedHolidays, countryName } from './holidays.js'
 import { bindPersonEditor, openPerson, removeEditedPerson } from './person-editor.js'
-import { examplePlan, blankPlan } from './seed.js'
 import { afterChange, renderAll } from './render.js'
 import { bindDnd, justDragged } from './dnd.js'
-import { pickUp, putDown, cancelCarry, applyFix, show } from './actions.js'
-import { openEstimate, openShare, closePop, popAnchor, repositionPop } from './popover.js'
+import { pickUp, putDown, cancelCarry, applyFix, show, moveTo, removeDeliverablePinned } from './actions.js'
+import { openEstimate, openShare, openCardMenu, closePop, popAnchor, repositionPop } from './popover.js'
 import { openModal, closeModal, modalKeydown, modalClick } from './modal.js'
+import { askConfirm, bindConfirm } from './confirm.js'
 import { runExport, importFile } from './io.js'
 import { openExport, bindExportDialog } from './export-dialog.js'
-import { $, showToast, escHtml } from './utils.js'
+import { icon } from './icons.js'
+import { $, showToast, escHtml, plural } from './utils.js'
 
 export function bindEvents() {
+  // Static icons: <span data-icon="name"> in the page shell becomes the SVG.
+  document.querySelectorAll('[data-icon]').forEach(el => { el.outerHTML = icon(el.dataset.icon) })
   bindDnd()
-  setupMenu('planBtn', 'planMenu')
+  setupMenu('plansBtn', 'plansMenu')
+  setupMenu('exportBtn', 'exportMenu')
   document.addEventListener('click', onClick)
   document.addEventListener('change', onChange)
   document.addEventListener('keydown', onKey)
@@ -32,29 +39,34 @@ export function bindEvents() {
   $('dayOffForm').addEventListener('submit', onAddDayOff)
   bindPersonEditor()
   bindExportDialog()
+  bindConfirm()
   $('importFile').addEventListener('change', e => { const f = e.target.files[0]; if (f) importFile(f); e.target.value = '' })
 }
 
-// ── Menu (.header-menu opened here, so its keys are handled here too) ──
-// It closes only itself: the header kit's own overflow panel is also a
-// .header-menu, and closing every open one shut the panel this menu lives in.
+// ── Menus (.header-menu opened here, so their keys are handled here too) ──
+// Each closes only itself and its sibling: the header kit's own overflow
+// panel is also a .header-menu, and closing every open one shut the panel
+// a menu lives in on phones.
+const menus = []
 function setupMenu(btnId, menuId) {
   const btn = $(btnId), menu = $(menuId)
-  const items = () => [...menu.querySelectorAll('[role="menuitem"]')]
+  const items = () => [...menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"]')].filter(el => !el.hidden)
   const close = (focusBtn = false) => {
     if (!menu.classList.contains('open')) return
     menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false')
     if (focusBtn) btn.focus()
   }
+  menus.push(close)
   btn.addEventListener('click', e => {
     e.stopPropagation()
     const open = !menu.classList.contains('open')
+    menus.forEach(c => c())
     menu.classList.toggle('open', open)
     btn.setAttribute('aria-expanded', String(open))
-    if (open) items()[0]?.focus()
+    if (open) (menu.querySelector('[aria-checked="true"]') || items()[0])?.focus()
   })
   document.addEventListener('click', e => { if (!menu.contains(e.target) && !btn.contains(e.target)) close() })
-  menu.addEventListener('click', e => { if (e.target.closest('[role="menuitem"]')) close() })
+  menu.addEventListener('click', e => { if (e.target.closest('[role="menuitem"], [role="menuitemradio"]')) close() })
   menu.addEventListener('keydown', e => {
     const list = items(), i = list.indexOf(document.activeElement)
     const go = n => { e.preventDefault(); list[(n + list.length) % list.length]?.focus() }
@@ -72,7 +84,7 @@ function onClick(e) {
   const t = e.target
   modalClick(e)
   const pop = $('pop')
-  if (!pop.hidden && !pop.contains(t) && !t.closest('[data-action="estimate"], [data-action="points"]')) closePop({ restore: false })
+  if (!pop.hidden && !pop.contains(t) && !t.closest('[data-action="estimate"], [data-action="points"], [data-action="card-menu"]')) closePop({ restore: false })
   if (justDragged()) return
 
   const exp = t.closest('[data-export]')
@@ -88,52 +100,121 @@ function onClick(e) {
   }
 }
 
+/** After a plan switch or a new plan: repaint from the top, nothing carried over. */
+function opened(message) {
+  closePop({ restore: false })
+  afterChange()
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+  if (message) showToast(message)
+}
+
 function runAction(action, el = null) {
   const id = el?.dataset.id
   switch (action) {
     case 'undo': if (undo()) { closePop({ restore: false }); afterChange() } break
     case 'redo': if (redo()) { closePop({ restore: false }); afterChange() } break
-    case 'example':
-      resetTo(examplePlan()); afterChange()
-      showToast('Example loaded. Your plan is kept under Plan > Restore a previous plan')
+
+    // Plans
+    case 'switch-plan':
+      if (switchPlan(id)) opened(`Opened ${state.doc.title}`)
       break
+    case 'example': {
+      const r = openExample()
+      opened(r.existing ? 'Opened the example you already had' : 'Example opened as a plan of its own. Yours are under Plans')
+      break
+    }
     case 'blank':
-      ui.firstRun = false
-      resetTo(blankPlan()); afterChange()
+      newBlankPlan()
+      opened('New plan. Pick the team\'s countries, then add people and deliverables')
       $('cal').open = true            // a blank plan's first question is whose holidays count
-      showToast('Blank plan. Pick the team\'s countries, then add people and deliverables')
       $('personName').focus()
       break
+    case 'duplicate': duplicatePlan(); opened(`Duplicated: you are now in ${state.doc.title}`); break
+    case 'delete-plan': {
+      const d = state.doc, others = listPlans().length - 1
+      askConfirm({
+        title: `Delete ${d.title}?`,
+        body: `It holds ${plural(d.people.length, 'person', 'people')} and ${plural(d.deliverables.length, 'deliverable')}. ${others ? 'Your most recent other plan opens next.' : 'A blank plan opens next.'}`,
+        safe: 'A copy is kept under Plans > Restore a deleted plan.',
+        confirm: 'Delete plan',
+      }, () => { const title = d.title; deletePlan(); opened(`Deleted ${title}. Plans > Restore a deleted plan brings it back`) })
+      break
+    }
+    case 'wipe': {
+      const d = state.doc
+      const what = [plural(d.people.length, 'person', 'people'), plural(d.deliverables.length, 'deliverable'),
+        d.backlog.length && `${d.backlog.length} in Later and Done`, d.daysOff.length && plural(d.daysOff.length, 'team day') + ' off'].filter(Boolean).join(', ')
+      askConfirm({
+        title: `Wipe ${d.title}?`,
+        body: `Removes ${what}. The plan's name, dates, countries and sprint rules stay.`,
+        check: 'Also reset the dates, countries and sprint rules',
+        safe: 'Ctrl+Z brings it all back, and a copy is kept under Plans > Restore a deleted plan.',
+        confirm: 'Wipe plan',
+      }, settings => {
+        keepPrevious(state.doc, 'wiped')
+        snapshot(); wipe({ settings }); ui.firstRun = false; ui.scope = 'plan'
+        afterChange()
+        showToast('Wiped. Ctrl+Z brings it back')
+        $('personName').focus()
+      })
+      break
+    }
     case 'dismiss-intro': ui.firstRun = false; saveState(); renderAll(); break
     case 'previous': openPrevious(); break
     case 'restore-previous': {
-      const entry = previousPlans()[Number(el.dataset.index)]
-      if (!entry) break
       closeModal('previousModal')
-      resetTo(entry.doc); afterChange()
-      showToast(`Restored ${entry.doc.title}. The plan it replaced is in the same list`)
+      const r = restorePrevious(Number(el.dataset.index))
+      if (r) opened(r.existing ? `${r.title} was already here, so it is open now` : `Restored ${r.title} as a plan of its own`)
       break
     }
     case 'import': $('importFile').click(); break
     case 'help': openModal('helpModal'); break
     case 'export': openExport(el.dataset.table); break
+
+    // The board: which deliverables, which view, which order
+    case 'scope': ui.scope = el.dataset.scope; ui.carry = null; renderAll(); break
+    case 'view':
+      ui.view = el.dataset.view
+      try { localStorage.setItem('reparto-v1-view', ui.view) } catch { /* a convenience only */ }
+      renderAll()
+      break
+    case 'sort': {
+      const k = el.dataset.sort
+      ui.sort = ui.sort.key === k ? (ui.sort.dir === 1 ? { key: k, dir: -1 } : { key: '', dir: 1 }) : { key: k, dir: 1 }
+      renderAll()
+      $('boardTable').querySelector(`[data-sort="${k}"]`)?.focus()
+      break
+    }
     case 'add-deliverable': {
-      snapshot(); const d = addDeliverable(); afterChange()
+      snapshot()
+      const d = ui.scope === 'plan' ? addDeliverable() : addBacklogItem(ui.scope)
+      afterChange()
       const input = document.querySelector(`[data-key="dn-${d.id}"]`)
       input?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); input?.focus({ preventScroll: true })
       break
     }
+    case 'card-menu': togglePop(`dm-${id}`, () => openCardMenu(id)); break
+    case 'move-deliverable': moveTo(id, el.dataset.when); break
     case 'remove-deliverable': {
-      const d = deliverable(id); if (!d) break
-      snapshot(); removeDeliverable(id); afterChange()
+      const d = findDeliverable(id); if (!d) break
+      removeDeliverablePinned(id)
       showToast(`Removed ${d.name || 'the deliverable'}. Ctrl+Z brings it back`)
       break
     }
+
     case 'edit-person': openPerson(id); break
     case 'remove-person': removeEditedPerson(); break
     case 'remove-day-off': snapshot(); removeDayOff(el.dataset.date, el.dataset.code || ''); afterChange(); break
     case 'work-holiday': snapshot(); setWorked(el.dataset.code, el.dataset.date, true); afterChange(); break
     case 'unwork-holiday': snapshot(); setWorked(el.dataset.code, el.dataset.date, false); afterChange(); break
+    case 'work-tagged': {
+      // Every day of one kind (often worked, bridge days) in one country's plan, in one undo step.
+      const c = el.dataset.code, days = taggedHolidays(state.doc, c, el.dataset.tag)
+      if (!days.length) break
+      snapshot(); for (const d of days) setWorked(c, d, true); afterChange()
+      showToast(`${plural(days.length, 'day')} in ${countryName(c)} now count as working days`)
+      break
+    }
     case 'country-toggle': {
       const c = el.dataset.code, list = state.doc.settings.countries
       setCountries(list.includes(c) ? list.filter(x => x !== c) : [...list, c])
@@ -198,7 +279,7 @@ function onChange(e) {
     return
   }
   if (t.dataset.field === 'name' && t.dataset.id) {
-    const d = deliverable(t.dataset.id)
+    const d = findDeliverable(t.dataset.id)
     const v = t.value.trim().slice(0, 80)
     if (d && d.name !== v) { snapshot(); updateDeliverable(d.id, { name: v }); afterChange() }
     return
@@ -260,14 +341,15 @@ function onAddDayOff(e) {
   f.elements.date.focus()
 }
 
-// ── Previous plans ───────────────────────────────────────────
+// ── Deleted and wiped plans ──────────────────────────────────
 function openPrevious() {
   const list = previousPlans()
   const when = t => { try { return new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) } catch { return '' } }
+  const why = { deleted: 'deleted', wiped: 'wiped' }
   $('previousList').innerHTML = list.length
     ? list.map((e, i) => `<li><button type="button" class="previous-btn" data-action="restore-previous" data-index="${i}">
         <strong>${escHtml(e.doc.title || 'Untitled plan')}</strong>
-        <span>${e.doc.people.length} people, ${e.doc.deliverables.length} deliverables · replaced ${escHtml(when(e.savedAt))}</span></button></li>`).join('')
+        <span>${plural(e.doc.people.length, 'person', 'people')}, ${plural(e.doc.deliverables.length, 'deliverable')} · ${why[e.why] || 'replaced'} ${escHtml(when(e.savedAt))}</span></button></li>`).join('')
     : '<li class="form-note">Nothing kept yet.</li>'
   openModal('previousModal')
 }

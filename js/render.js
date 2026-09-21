@@ -3,13 +3,15 @@
 // region from the document. The regions are cheap to rebuild, so there is no
 // diffing; the focused control is found again by its data-key.
 
-import { state, ui, saveState, canUndo, canRedo, previousPlans } from './state.js'
+import { state, ui, canUndo, canRedo } from './state.js'
+import { saveState, previousPlans, listPlans } from './plans.js'
 import { analyze, horizons, ROUNDING } from './capacity.js'
 import { computeFlags, missingPeople, engineers } from './flags.js'
 import { renderRoster, renderBoard } from './render-board.js'
 import { renderFlags } from './render-flags.js'
 import { renderCalendar } from './render-calendar.js'
 import { cal, ensureHolidays, countryName } from './holidays.js'
+import { icon } from './icons.js'
 import { $, escHtml, plural } from './utils.js'
 
 export function afterChange() {
@@ -32,9 +34,17 @@ export function renderAll() {
   if (key) document.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true })
 }
 
+const ORIGIN = { link: 'from a link', import: 'imported', example: 'the example', copy: 'a copy', restored: 'restored', blank: '' }
+
 function renderChrome() {
   $('firstRun').hidden = !ui.firstRun
   $('previousItem').hidden = !previousPlans().length
+  // The plan switcher: every plan in this browser, the open one checked.
+  const plans = listPlans()
+  $('planList').innerHTML = plans.map(p => `<button type="button" role="menuitemradio" aria-checked="${p.id === state.planId}" data-action="switch-plan" data-id="${escHtml(p.id)}">
+      <span class="plan-item"><strong>${escHtml(p.title)}</strong><small>${plural(p.people, 'person', 'people')} · ${plural(p.deliverables, 'deliverable')}${ORIGIN[p.origin] ? ` · ${ORIGIN[p.origin]}` : ''}${p.unsaved ? ' · not saved yet' : ''}</small></span>
+      ${p.id === state.planId ? icon('check', { cls: 'plan-check' }) : ''}</button>`).join('')
+  $('plansBtn').title = `Plans: ${state.doc.title} (${plural(plans.length, 'plan')} in this browser)`
   $('undoBtn').disabled = !canUndo()
   $('redoBtn').disabled = !canRedo()
   const t = $('planTitle')
@@ -120,11 +130,11 @@ function renderCalc(a) {
 const fmt = n => (Number.isInteger(n) ? String(n) : n.toFixed(1))
 
 // ── Totals ───────────────────────────────────────────────────
-function tile({ label, value, unit = 'pts', sub, status = '', meter = null }) {
+function tile({ label, value, unit = 'pts', sub, status = '', meter = null, ico = '' }) {
   const bar = meter === null ? '' :
     `<div class="tile-meter" role="img" aria-label="${Math.round(meter)}% of capacity booked"><i style="width:${Math.min(100, meter)}%"></i></div>`
   return `<div class="tile${status ? ` tile--${status}` : ''}">
-    <div class="tile-label">${label}</div>
+    <div class="tile-label">${ico ? icon(ico, { size: 14 }) : ''}${label}</div>
     <div class="tile-value"><span class="tile-num">${value}</span> <span class="tile-unit">${unit}</span></div>
     ${bar}
     <div class="tile-sub">${sub}</div>
@@ -139,7 +149,7 @@ function missingTile(mp, bookable) {
   if (mp.unstaffed) lines.push(`${mp.unstaffed} unstaffed on ${plural(mp.unstaffedOn, 'deliverable')}${mp.freeHired.length ? `: ${mp.freeHired.map(x => `${escHtml(x.name)} ${x.free}`).join(', ')} free` : ''}`)
   if (mp.overPeople.length) lines.push(`<span class="error-text">${mp.overPeople.map(x => `${escHtml(x.name)} ${x.over} over`).join(', ')}</span>`)
   const sub = lines.join(' · ') || (mp.status === 'ok' ? 'Every sized deliverable is staffed' : 'Nothing sized to staff yet')
-  return tile({ label: 'Missing people', value: mp.points, unit: 'pts short', sub, status: mp.status === 'none' ? '' : mp.status })
+  return tile({ label: 'Missing people', value: mp.points, unit: 'pts short', sub, status: mp.status === 'none' ? '' : mp.status, ico: 'user-plus' })
 }
 
 function renderTiles(a) {
@@ -147,18 +157,19 @@ function renderTiles(a) {
   const openN = d.people.filter(p => p.open).length
   const pct = a.capacity ? (a.allocated / a.capacity) * 100 : 0
   const teamShort = Math.max(0, a.demand - a.capacity)
+  const later = d.backlog.filter(x => x.when === 'later').length
   $('tiles').innerHTML = [
     tile({
-      label: 'Team capacity', value: a.capacity,
+      label: 'Team capacity', value: a.capacity, ico: 'users',
       sub: `${plural(d.people.length, 'person', 'people')}${openN ? `, ${a.openCap} on ${plural(openN, 'open role')}` : ''} · ${fmt(a.raw)} raw`,
     }),
     tile({
-      label: 'Demand', value: a.demand,
-      sub: `${plural(d.deliverables.length, 'deliverable')}${a.unsized ? ` · <span class="warn-text">${a.unsized} unsized</span>` : ''}`,
+      label: 'Demand', value: a.demand, ico: 'target',
+      sub: `${plural(d.deliverables.length, 'deliverable')}${a.unsized ? ` · <span class="warn-text">${a.unsized} unsized</span>` : ''}${later ? ` · ${later} later, not counted` : ''}`,
       status: teamShort ? 'error' : '',
     }),
     tile({
-      label: 'Booked', value: a.allocated,
+      label: 'Booked', value: a.allocated, ico: 'calendar-check',
       sub: `${Math.round(pct)}% of capacity · ${a.free} free${a.over ? ` · <span class="error-text">${a.over} over-booked</span>` : ''}`,
       meter: pct,
     }),

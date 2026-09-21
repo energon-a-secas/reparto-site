@@ -2,11 +2,13 @@
 // One element (#pop), anchored under the control that opened it. The anchor
 // is remembered by data-key, not by node, because every change re-renders.
 
-import { state, snapshot, deliverable, person, updateDeliverable, setShare, unassign } from './state.js'
+import { state, snapshot, deliverable, findDeliverable, person, updateDeliverable, setShare, unassign } from './state.js'
 import { SCALE, fibCeil, analyze, shareKey, pctForPoints } from './capacity.js'
 import { engineers } from './flags.js'
 import { cal } from './holidays.js'
 import { afterChange } from './render.js'
+import { moveTo, removeDeliverablePinned } from './actions.js'
+import { icon } from './icons.js'
 import { $, escHtml, showToast, fmtPct } from './utils.js'
 
 let anchorKey = null
@@ -46,7 +48,7 @@ function place(anchor) {
   pop.style.left = `${left}px`
 }
 
-function open(key, html, label) {
+function open(key, html, label, focus = '') {
   const anchor = document.querySelector(`[data-key="${key}"]`)
   if (!anchor) return null
   anchorKey = key
@@ -54,7 +56,7 @@ function open(key, html, label) {
   pop.setAttribute('aria-label', label)
   pop.innerHTML = html
   place(anchor)
-  ;(pop.querySelector('[aria-pressed="true"]') || pop.querySelector('button, input'))?.focus({ preventScroll: true })
+  ;((focus && pop.querySelector(focus)) || pop.querySelector('[aria-pressed="true"]') || pop.querySelector('button, input'))?.focus({ preventScroll: true })
   return pop
 }
 
@@ -63,7 +65,7 @@ const head = title => `<div class="pop-head"><strong>${escHtml(title)}</strong>
 
 // ── Estimate ─────────────────────────────────────────────────
 export function openEstimate(delivId) {
-  const d = deliverable(delivId); if (!d) return
+  const d = findDeliverable(delivId); if (!d) return
   const s = state.doc.settings
   const scale = [null, ...SCALE].map(v =>
     `<button type="button" class="scale-btn" data-pick="${v ?? ''}" aria-pressed="${d.estimate === v}" aria-label="${v ? `${v} points` : 'Unsized'}">${v ?? '?'}</button>`
@@ -183,5 +185,46 @@ export function openShare(delivId, personId) {
     if (!sh.fixed && Math.abs(v - sh.pct) < 0.005) return
     snapshot(); setShare(delivId, personId, v); afterChange()
     document.querySelector(`[data-key="sp-${delivId}-${personId}"]`)?.focus({ preventScroll: true })
+  }
+}
+
+// ── A deliverable's menu: its note, Later, Done, remove ──────
+// Later (a future plan) and Done (shipped) keep the deliverable and its
+// people but take it out of every number; bringing it back restores them.
+export function openCardMenu(delivId) {
+  const d = findDeliverable(delivId); if (!d) return
+  const where = deliverable(delivId) ? 'plan' : d.when
+  const name = d.name.trim() || 'Untitled deliverable'
+  const moves = [
+    where !== 'plan' && ['plan', 'rotate-ccw', 'Back into this plan'],
+    where !== 'later' && ['later', 'calendar-clock', 'Move to Later'],
+    where !== 'done' && ['done', 'archive', 'Mark as done'],
+  ].filter(Boolean)
+  const pop = open(`dm-${delivId}`, `${head(name)}
+    <label class="pop-label" for="popNote">Note</label>
+    <textarea class="field field--area" id="popNote" rows="3" maxlength="400" placeholder="Scope, a link, who asked for it">${escHtml(d.note)}</textarea>
+    <div class="pop-row"><button type="button" class="btn btn--secondary btn--sm" data-menu="note">Save note</button><span class="pop-count" id="popNoteCount">${d.note.length}/400</span></div>
+    <div class="pop-actions" role="group" aria-label="Move or remove">
+      ${moves.map(([w, ic, label]) => `<button type="button" class="pop-action" data-menu="move" data-when="${w}">${icon(ic)}${label}</button>`).join('')}
+      <button type="button" class="pop-action pop-action--danger" data-menu="remove">${icon('trash-2')}Remove</button>
+    </div>
+    <p class="pop-note">${where === 'plan' ? 'Later and Done keep its people and stop counting it. Bring it back and its shares return as they were.' : 'It counts toward nothing until it is back in this plan.'}</p>`,
+  `${name}: note, move or remove`, '#popNote')
+  if (!pop) return
+  const note = pop.querySelector('#popNote')
+  note.addEventListener('input', () => { pop.querySelector('#popNoteCount').textContent = `${note.value.length}/400` })
+  note.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); pop.querySelector('[data-menu="note"]').click() } })
+  pop.onclick = e => {
+    if (e.target.closest('[data-pop="close"]')) { closePop(); return }
+    const b = e.target.closest('[data-menu]'); if (!b) return
+    if (b.dataset.menu === 'note') {
+      const v = note.value.trim().slice(0, 400)
+      closePop()
+      if (v !== d.note) { snapshot(); updateDeliverable(delivId, { note: v }); afterChange(); showToast(v ? 'Note saved' : 'Note removed') }
+      return
+    }
+    closePop({ restore: false })
+    if (b.dataset.menu === 'move') moveTo(delivId, b.dataset.when)
+    else if (b.dataset.menu === 'remove' && removeDeliverablePinned(delivId)) showToast(`Removed ${name}. Ctrl+Z brings it back`)
   }
 }

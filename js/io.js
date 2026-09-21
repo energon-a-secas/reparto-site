@@ -1,9 +1,11 @@
 // ── Import, export, share ────────────────────────────────────
 // A share link carries the whole plan in the URL fragment (#p=...), which
 // the browser never sends to a server. Every way in goes through
-// normalizeDoc(), the same gate as a saved session.
+// normalizeDoc(), the same gate as a saved session, and opens as a plan of
+// its own (plans.js), so a link or an import never replaces yours.
 
-import { state, ui, resetTo, normalizeDoc } from './state.js'
+import { state, normalizeDoc } from './state.js'
+import { openPlan } from './plans.js'
 import { analyze } from './capacity.js'
 import { toMarkdown as reportMarkdown } from './report.js'
 import { cal, countryName } from './holidays.js'
@@ -26,27 +28,25 @@ function decode(text) {
 
 export const shareUrl = () => `${location.origin}${location.pathname}${PREFIX}${encode(state.doc)}`
 
-/** Load a plan from #p= if present. The replaced plan stays one undo away. */
-export function loadFromHash({ keep = true } = {}) {
-  if (!location.hash.startsWith(PREFIX)) return false
-  try {
-    resetTo(decode(location.hash.slice(PREFIX.length)), { keep })
-    ui.firstRun = false
-    history.replaceState(null, '', location.pathname + location.search)
-    return true
-  } catch {
+/** Open the plan in #p=, if there is one, as a plan of its own. Returns openPlan()'s { id, existing }, or null. */
+export function loadFromHash() {
+  if (!location.hash.startsWith(PREFIX)) return null
+  let opened = null
+  try { opened = openPlan(decode(location.hash.slice(PREFIX.length)), 'link') } catch {
     showToast('That share link is damaged, so your own plan stayed')
-    return false
   }
+  history.replaceState(null, '', location.pathname + location.search)
+  return opened
 }
 
 export async function importFile(file) {
   try {
     const doc = normalizeDoc(JSON.parse(await file.text()))
-    ui.firstRun = false
-    resetTo(doc)
+    const r = openPlan(doc, 'import')
     afterChange()
-    showToast(`Imported ${doc.title}: ${plural(doc.people.length, 'person', 'people')}, ${plural(doc.deliverables.length, 'deliverable')}`)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    showToast(r.existing ? `${doc.title} was already here, so it is open now`
+      : `Imported ${doc.title} as a plan of its own: ${plural(doc.people.length, 'person', 'people')}, ${plural(doc.deliverables.length, 'deliverable')}`)
   } catch (err) {
     showToast(err instanceof SyntaxError ? 'Could not import: that file is not valid JSON' : 'Could not import: that file is not a Reparto plan')
   }

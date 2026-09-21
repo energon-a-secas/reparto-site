@@ -2,7 +2,7 @@
 // The operations more than one input path reaches: a pointer drop, a
 // keyboard carry and a flag's fix all land here, so they cannot disagree.
 
-import { state, ui, snapshot, person, deliverable, assign, unassign, moveShare, setShare, addPerson, scaleShares } from './state.js'
+import { state, ui, snapshot, commitFrom, person, deliverable, findDeliverable, assign, unassign, moveShare, setShare, addPerson, scaleShares, moveDeliverable, removeDeliverable } from './state.js'
 import { analyze, shareKey, pctForPoints, trimShares, pinShares } from './capacity.js'
 import { cal } from './holidays.js'
 import { afterChange, renderAll } from './render.js'
@@ -71,6 +71,42 @@ export function dropPerson(personId, from, target) {
   const left = after.people.get(personId).free
   showToast(`${nameOf(p)} gives ${fmtPct(got.pct)} (${got.points} pts) to ${d.name || 'the deliverable'} · ${left < 0 ? `${-left} over` : `${left} free`}`)
   return true
+}
+
+// ── Later, done, removed ─────────────────────────────────────
+/**
+ * Change a plan while the people on one deliverable keep their other cards
+ * exactly: taking a share away (or bringing it back) re-rounds a person's
+ * shares together, which can move a point between their other cards.
+ */
+function keepOthers(delivId, change) {
+  const d = findDeliverable(delivId); if (!d) return false
+  const a = analyze(state.doc, cal)
+  const before = JSON.stringify(state.doc)
+  const keep = d.members.map(m => [m.person, new Map(state.doc.deliverables
+    .filter(x => x.id !== delivId && x.members.some(y => y.person === m.person))
+    .map(x => [x.id, a.shares.get(shareKey(x.id, m.person)).points]))])
+  if (!change()) return false
+  for (const [pid, wanted] of keep) if (person(pid)) state.doc = pinShares(state.doc, cal, pid, wanted)
+  if (!commitFrom(before)) return false
+  afterChange()
+  return true
+}
+
+const WHEN = { plan: 'this plan', later: 'Later', done: 'Done' }
+
+/** Move a deliverable into the plan, or out of it to Later or Done. Its people go with it. */
+export function moveTo(delivId, when) {
+  const d = findDeliverable(delivId); if (!d) return
+  const name = d.name.trim() || 'The deliverable'
+  const pts = when !== 'plan' && deliverable(delivId) ? analyze(state.doc, cal).deliverables.get(delivId)?.got || 0 : 0
+  if (!keepOthers(delivId, () => moveDeliverable(delivId, when))) return
+  showToast(when === 'plan' ? `${name} is back in this plan${d.members.length ? ' with its people' : ''}`
+    : `${name} moved to ${WHEN[when]}${pts ? `. ${pts} booked pts are free again` : ''}`)
+}
+
+export function removeDeliverablePinned(delivId) {
+  return keepOthers(delivId, () => { removeDeliverable(delivId); return true })
 }
 
 // ── Carry: pick up with a click or Enter, put down on a deliverable ──

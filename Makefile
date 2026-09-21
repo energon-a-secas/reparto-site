@@ -10,6 +10,7 @@ help:
 	@echo "  make kill     Kill this project's HTTP server"
 	@echo "  make test     Run the Node tests (capacity, calendar, flags)"
 	@echo "  make holidays Regenerate data/holidays/ from date-holidays"
+	@echo "  make icons    Regenerate js/icon-data.js from lucide-static"
 	@echo ""
 
 # ── Dev server ────────────────────────────────────────────────────────────────
@@ -40,3 +41,13 @@ HD_DIR ?= $(or $(TMPDIR),/tmp)/reparto-date-holidays
 holidays:
 	npm install --prefix "$(HD_DIR)" --no-audit --no-fund date-holidays@3
 	NODE_PATH="$(HD_DIR)/node_modules" node tools/build-holidays.cjs
+
+# ── Icons ─────────────────────────────────────────────────────────────────────
+# Every icon is inline SVG from js/icon-data.js, generated from lucide-static
+# (installed outside the monorepo, same reason as above). Add a name to NAMES
+# in tools/build-icons.cjs and rerun.
+LU_DIR ?= $(or $(TMPDIR),/tmp)/reparto-lucide
+.PHONY: icons
+icons:
+	npm install --prefix "$(LU_DIR)" --no-audit --no-fund lucide-static@1
+	NODE_PATH="$(LU_DIR)/node_modules" node tools/build-icons.cjs

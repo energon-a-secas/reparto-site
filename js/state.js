@@ -1,16 +1,20 @@
 // ── State ────────────────────────────────────────────────────
 // `doc` is the plan (saved, shared, exported). `ui` is the view (never saved,
 // never in an undo snapshot). Every mutation is: snapshot(), mutate,
-// afterChange() in render.js, which saves and repaints.
+// afterChange() in render.js, which saves and repaints. Where plans are
+// stored, and which one is open, is plans.js.
+//
+// A plan's deliverables are the work it counts. `backlog` holds the ones
+// moved out of it, `when: 'later'` (a future plan) or `'done'` (shipped):
+// kept with their people so moving one back restores it, and invisible to
+// every number, because analyze() and the flags only read `deliverables`.
 
 import { DEFAULT_SETTINGS, SCALE, ROUNDING, defaultStart, PCT_MIN, PCT_MAX } from './capacity.js'
 import { parseISO } from './calendar.js'
-import { examplePlan } from './seed.js'
 
-const STORAGE_KEY = 'reparto-v1'
 const UNDO_DEPTH = 40
 
-export const state = { doc: null }   // set by loadSaved(): the saved plan, else the example
+export const state = { doc: null, planId: null }   // set by plans.js loadSaved()
 
 export const ui = {
   carry: null,        // { person, from } while a person is picked up by click or key
@@ -18,9 +22,20 @@ export const ui = {
   filter: 'all',      // flag category filter
   showInfo: false,    // info-level flags are folded by default
   firstRun: false,
+  view: 'cards',      // cards | table, for this plan's deliverables
+  scope: 'plan',      // plan | later | done: which deliverables the board lists
+  sort: { key: '', dir: 1 },   // the table's sort; '' is the plan's own order
 }
 
-const undoStack = [], redoStack = []
+// Undo and redo per plan, in memory: switching plans and back keeps both.
+const histories = new Map()
+let hist = { undo: [], redo: [] }
+/** Point undo and redo at one plan's history (plans.js calls this on every switch). */
+export function useHistory(planId) {
+  if (!histories.has(planId)) histories.set(planId, { undo: [], redo: [] })
+  hist = histories.get(planId)
+}
+export const dropHistory = planId => histories.delete(planId)
 
 // ── Validation: one gate in front of every entry point ───────
 const num = (v, lo, hi, dflt) => {
@@ -98,9 +113,8 @@ export function normalizeDoc(raw) {
       vacations: periods(p.vacations),
     })
   }
-  const deliverables = []
-  for (const d of raw.deliverables) {
-    if (!d || typeof d !== 'object') continue
+  // A deliverable, in the plan or its backlog. Members must name a person; unknown ids are dropped.
+  const deliverable = d => {
     let id = safeId(d.id) || newId('d')
     if (seen.has(id)) id = newId('d')
     seen.add(id)
@@ -113,12 +127,11 @@ export function normalizeDoc(raw) {
       else members.push({ person: pid, points: num(Math.round(m.points), 1, 999, 1) })
     }
     const est = Number(d.estimate)
-    deliverables.push({
-      id, name: str(d.name), note: str(d.note, 400),
-      estimate: SCALE.includes(est) ? est : null,
-      members,
-    })
+    return { id, name: str(d.name), note: str(d.note, 400), estimate: SCALE.includes(est) ? est : null, members }
   }
+  const deliverables = raw.deliverables.filter(d => d && typeof d === 'object').map(deliverable)
+  const backlog = (Array.isArray(raw.backlog) ? raw.backlog : []).filter(d => d && typeof d === 'object').slice(0, 500)
+    .map(d => ({ ...deliverable(d), when: d.when === 'done' ? 'done' : 'later' }))
   const daysOff = []
   for (const t of Array.isArray(raw.daysOff) ? raw.daysOff : []) {
     const d = date(t?.date), c = code(t?.country)
@@ -126,40 +139,25 @@ export function normalizeDoc(raw) {
     if (daysOff.length >= 200) break
   }
   daysOff.sort((a, b) => a.date.localeCompare(b.date))
-  return { v: 1, title: str(raw.title) || 'Untitled plan', settings, daysOff, people, deliverables }
-}
-
-// ── Persistence ──────────────────────────────────────────────
-export function loadSaved() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) { state.doc = normalizeDoc(JSON.parse(raw).doc); return true }
-  } catch { /* unreadable: fall through to the example */ }
-  ui.firstRun = true
-  state.doc = normalizeDoc(examplePlan())
-  return false
-}
-
-export function saveState() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, doc: state.doc, savedAt: Date.now() })) } catch { /* private mode or full */ }
+  return { v: 1, title: str(raw.title) || 'Untitled plan', settings, daysOff, people, deliverables, backlog }
 }
 
 // ── Undo ─────────────────────────────────────────────────────
 export function snapshot() {
-  undoStack.push(JSON.stringify(state.doc))
-  if (undoStack.length > UNDO_DEPTH) undoStack.shift()
-  redoStack.length = 0
+  hist.undo.push(JSON.stringify(state.doc))
+  if (hist.undo.length > UNDO_DEPTH) hist.undo.shift()
+  hist.redo.length = 0
 }
 export function undo() {
-  if (!undoStack.length) return false
-  redoStack.push(JSON.stringify(state.doc))
-  state.doc = JSON.parse(undoStack.pop())
+  if (!hist.undo.length) return false
+  hist.redo.push(JSON.stringify(state.doc))
+  state.doc = JSON.parse(hist.undo.pop())
   return true
 }
 export function redo() {
-  if (!redoStack.length) return false
-  undoStack.push(JSON.stringify(state.doc))
-  state.doc = JSON.parse(redoStack.pop())
+  if (!hist.redo.length) return false
+  hist.undo.push(JSON.stringify(state.doc))
+  state.doc = JSON.parse(hist.redo.pop())
   return true
 }
 /**
@@ -169,55 +167,20 @@ export function redo() {
  */
 export function commitFrom(before) {
   if (JSON.stringify(state.doc) === before) return false
-  undoStack.push(before)
-  if (undoStack.length > UNDO_DEPTH) undoStack.shift()
-  redoStack.length = 0
+  hist.undo.push(before)
+  if (hist.undo.length > UNDO_DEPTH) hist.undo.shift()
+  hist.redo.length = 0
   return true
 }
-export const canUndo = () => undoStack.length > 0
-export const canRedo = () => redoStack.length > 0
-
-/**
- * Replace the whole plan (example, import, share link, reset). Undoable, and
- * the replaced plan is kept, unless `keep` is false (a first visit's untouched
- * example is nobody's plan).
- */
-export function resetTo(doc, { keep = true } = {}) {
-  const next = normalizeDoc(doc)
-  if (keep) keepPrevious(next)
-  snapshot()
-  state.doc = next
-}
-
-// ── Previous plans ───────────────────────────────────────────
-// Undo lives in memory, so a share link that replaced your plan used to be
-// the end of it once the tab reloaded. The last five replaced plans are kept
-// in localStorage and offered under Plan > Restore a previous plan.
-const PREVIOUS_KEY = 'reparto-v1-previous'
-const PREVIOUS_MAX = 5
-
-export function previousPlans() {
-  try {
-    const list = JSON.parse(localStorage.getItem(PREVIOUS_KEY) || '[]')
-    return Array.isArray(list) ? list.filter(x => x && x.doc) : []
-  } catch { return [] }
-}
-
-function keepPrevious(incoming) {
-  try {
-    const current = state.doc
-    if (!current || (!current.people.length && !current.deliverables.length)) return
-    const json = JSON.stringify(current)
-    const list = previousPlans()
-    if (json === JSON.stringify(incoming) || (list[0] && JSON.stringify(list[0].doc) === json)) return
-    list.unshift({ title: current.title, savedAt: Date.now(), doc: current })
-    localStorage.setItem(PREVIOUS_KEY, JSON.stringify(list.slice(0, PREVIOUS_MAX)))
-  } catch { /* private mode or full: nothing to keep */ }
-}
+export const canUndo = () => hist.undo.length > 0
+export const canRedo = () => hist.redo.length > 0
 
 // ── Lookups ──────────────────────────────────────────────────
 export const person = id => state.doc.people.find(p => p.id === id)
+/** A deliverable in this plan: the only ones that take shares and count. */
 export const deliverable = id => state.doc.deliverables.find(d => d.id === id)
+/** A deliverable in the plan or its backlog, for what both can edit: name, estimate, note. */
+export const findDeliverable = id => deliverable(id) || state.doc.backlog.find(d => d.id === id)
 
 // ── Mutations (callers snapshot first) ───────────────────────
 export function setSetting(key, value) { state.doc.settings[key] = value }
@@ -251,7 +214,7 @@ export function setWorked(country, date, on) {
 }
 export function removePerson(id) {
   state.doc.people = state.doc.people.filter(p => p.id !== id)
-  for (const d of state.doc.deliverables) d.members = d.members.filter(m => m.person !== id)
+  for (const d of [...state.doc.deliverables, ...state.doc.backlog]) d.members = d.members.filter(m => m.person !== id)
 }
 
 export function addDeliverable(fields = {}) {
@@ -259,8 +222,55 @@ export function addDeliverable(fields = {}) {
   state.doc.deliverables.push(d)
   return d
 }
-export function updateDeliverable(id, fields) { Object.assign(deliverable(id) || {}, fields) }
-export function removeDeliverable(id) { state.doc.deliverables = state.doc.deliverables.filter(d => d.id !== id) }
+export function updateDeliverable(id, fields) { Object.assign(findDeliverable(id) || {}, fields) }
+export function removeDeliverable(id) {
+  state.doc.deliverables = state.doc.deliverables.filter(d => d.id !== id)
+  state.doc.backlog = state.doc.backlog.filter(d => d.id !== id)
+}
+
+// ── Later and done ───────────────────────────────────────────
+/** Add a deliverable straight to the backlog. */
+export function addBacklogItem(when, fields = {}) {
+  const d = { id: newId('d'), name: '', estimate: null, note: '', members: [], ...fields, when: when === 'done' ? 'done' : 'later' }
+  state.doc.backlog.push(d)
+  return d
+}
+/**
+ * Move a deliverable between the plan and its backlog: `when` is 'plan',
+ * 'later' or 'done'. Its people go with it, so a move back restores the
+ * shares exactly as they were.
+ */
+export function moveDeliverable(id, when) {
+  const doc = state.doc
+  const inPlan = doc.deliverables.find(d => d.id === id)
+  const shelved = doc.backlog.find(d => d.id === id)
+  if (when === 'plan') {
+    if (!shelved) return false
+    doc.backlog = doc.backlog.filter(d => d !== shelved)
+    const { when: _w, ...back } = shelved
+    // A person removed while it was shelved already took their share with them.
+    back.members = back.members.filter(m => doc.people.some(p => p.id === m.person))
+    doc.deliverables.push(back)
+    return true
+  }
+  const to = when === 'done' ? 'done' : 'later'
+  if (shelved) { if (shelved.when === to) return false; shelved.when = to; return true }
+  if (!inPlan) return false
+  doc.deliverables = doc.deliverables.filter(d => d !== inPlan)
+  doc.backlog.unshift({ ...inPlan, when: to })
+  return true
+}
+
+/**
+ * Empty the plan: people, deliverables, backlog, team days off. The dates,
+ * countries and sprint rules stay unless `settings` is true. Callers
+ * snapshot first, so Ctrl+Z brings it all back.
+ */
+export function wipe({ settings = false } = {}) {
+  const doc = state.doc
+  doc.people = []; doc.deliverables = []; doc.backlog = []; doc.daysOff = []
+  if (settings) doc.settings = { ...DEFAULT_SETTINGS, startDate: defaultStart(), countries: [], worked: [] }
+}
 
 const pct2 = x => Math.round(Math.min(PCT_MAX, Math.max(PCT_MIN, x)) * 100) / 100
 

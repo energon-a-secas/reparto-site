@@ -5,7 +5,7 @@
 
 import { state } from './state.js'
 import { sprintWindows, planRange, daysOffFor, parseISO, fmtDay, lastWorkday } from './calendar.js'
-import { countries, countryName, MAIN } from './holidays.js'
+import { countries, countryName, MAIN, TAGS } from './holidays.js'
 import { $, escHtml, plural } from './utils.js'
 
 const X_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>'
@@ -53,6 +53,18 @@ function renderCountryPicks(s) {
   }
 }
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+/** Sprints and their weeks count from the start date, which is not obvious when it is not a Monday. */
+function weeksNote(start, s) {
+  const first = WEEKDAYS[start.getUTCDay()], last = WEEKDAYS[(start.getUTCDay() + 6) % 7]
+  const workdays = `${WEEKDAYS[1]} to ${WEEKDAYS[s.daysPerWeek % 7]}`
+  const len = `${s.weeksPerSprint === 1 ? 'one week' : `${s.weeksPerSprint} weeks`}`
+  return start.getUTCDay() === 1
+    ? `Sprints and their weeks count from the start date: each sprint is ${len}, Monday to Sunday. Move the start date and every sprint moves with it.`
+    : `Sprints and their weeks count from the start date, a ${first}: each week runs ${first} to ${last}, and each sprint is ${len}. Working days are still ${workdays}, and the meeting day comes out of each of those weeks.`
+}
+
 export function renderCalendar(a, cal) {
   const s = state.doc.settings
   const range = planRange(s)
@@ -80,11 +92,19 @@ export function renderCalendar(a, cal) {
   const loading = perCountry.some(c => c.loading)
   const who = t => (t.country ? `<span class="day-cc">${t.country}</span>` : '')
 
+  // A holiday the data tags (a US federal day many firms work, an Argentine bridge day) says so, with its reason on hover.
+  const tagOf = (code, date) => TAGS[cal.tag?.(code, date)]
+  const tagChip = t => (t ? `<span class="day-tag" title="${escHtml(t.title)}">${t.label}</span>` : '')
   const chips = perCountry.flatMap(c => [
-    ...c.costs.map(x => `<li class="day-chip day-chip--holiday">${multi ? `<span class="day-cc">${c.code}</span>` : ''}<span class="day-date">${fmtDay(x.d)}</span> ${escHtml(x.label)}
+    ...c.costs.map(x => `<li class="day-chip day-chip--holiday">${multi ? `<span class="day-cc">${c.code}</span>` : ''}<span class="day-date">${fmtDay(x.d)}</span> ${escHtml(x.label)}${tagChip(tagOf(c.code, x.date))}
       <button type="button" class="day-x" data-action="work-holiday" data-code="${c.code}" data-date="${x.date}" aria-label="Count ${fmtDay(x.d)} as a working day in ${escHtml(countryName(c.code))}" title="The team works this day">${X_ICON}</button></li>`),
     ...c.worked.map(x => `<li class="day-chip day-chip--muted" title="Marked as a working day"><span class="day-cc">${c.code}</span><span class="day-date">${fmtDay(x.d)}</span> <s>${escHtml(x.label)}</s> worked
       <button type="button" class="day-restore" data-action="unwork-holiday" data-code="${c.code}" data-date="${x.date}" aria-label="Count ${fmtDay(x.d)} as a holiday in ${escHtml(countryName(c.code))} again">Restore</button></li>`),
+    // Two or more of one kind: work them all in one step.
+    ...Object.keys(TAGS).map(tag => {
+      const n = c.costs.filter(x => cal.tag?.(c.code, x.date) === tag).length
+      return n > 1 ? `<li class="day-bulk"><button type="button" class="chip-btn" data-action="work-tagged" data-code="${c.code}" data-tag="${tag}" title="${escHtml(TAGS[tag].title)}">Work all ${n} ${TAGS[tag].label} days${multi ? ` (${c.code})` : ''}</button></li>` : ''
+    }),
   ]).join('')
     + teamCosts.map(t => `<li class="day-chip day-chip--team">${who(t)}<span class="day-date">${fmtDay(t.d)}</span> ${escHtml(t.label || 'Team day off')}
         <button type="button" class="day-x" data-action="remove-day-off" data-date="${t.date}" data-code="${t.country || ''}" aria-label="Remove ${fmtDay(t.d)} as a team day off">${X_ICON}</button></li>`).join('')
@@ -112,6 +132,7 @@ export function renderCalendar(a, cal) {
     ? `Runs <strong>${fmtDay(range.from, true)}</strong> to <strong>${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)}</strong>`
     : 'Pick a start date'
   $('sprintStrip').innerHTML = sprintList
+  $('calNote').textContent = range ? weeksNote(range.from, s) : ''
   const byCountry = perCountry.map(c => `${countryName(c.code)} ${plural(c.costs.length, 'holiday')}`).join(', ')
   $('calDaysHead').textContent = loading ? 'Loading holidays…'
     : [s.countries.length ? `On working days in this plan: ${byCountry}` : 'No public holidays: pick the team\'s countries above',

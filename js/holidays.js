@@ -4,7 +4,9 @@
 // country's file is fetched from this origin the first time a plan names it,
 // then the plan re-renders. The lookup is what calendar.js consumes.
 
-const files = new Map()      // code -> { years } | 'loading' | 'failed'
+import { planRange, parseISO } from './calendar.js'
+
+const files = new Map()      // code -> { years, tags } | 'loading' | 'failed'
 let index = null             // [{ code, name }]
 let onLoaded = () => {}
 
@@ -17,6 +19,33 @@ export const cal = {
     const f = files.get(code)
     return !f ? 'none' : typeof f === 'string' ? f : 'ok'
   },
+  /** 'often-worked' (a US federal holiday many private employers work), 'bridge' (a decreed non-working day), or ''. */
+  tag(code, date) {
+    const f = files.get(code)
+    return (f && typeof f === 'object' && f.tags[date]) || ''
+  },
+}
+
+/** What each tag means, for the chip's label and title. */
+export const TAGS = {
+  'often-worked': { label: 'often worked', title: 'A federal holiday that many private employers work' },
+  bridge: { label: 'bridge day', title: 'A non-working day set by decree: the public sector is off, private employers may work it' },
+}
+
+/** The dates with one tag that still cost a working day in this plan, for "work them all". */
+export function taggedHolidays(doc, code, tag) {
+  const s = doc.settings
+  const range = planRange(s)
+  if (!range) return []
+  const worked = new Set((s.worked || []).filter(w => w.country === code).map(w => w.date))
+  const out = []
+  for (let y = range.from.getUTCFullYear(); y <= range.last.getUTCFullYear(); y++) {
+    for (const [date] of cal.holidays(code, y) || []) {
+      const d = parseISO(date)
+      if (d && d >= range.from && d < range.to && (d.getUTCDay() || 7) <= s.daysPerWeek && !worked.has(date) && cal.tag(code, date) === tag) out.push(date)
+    }
+  }
+  return out
 }
 
 /** Call once: the repaint to run whenever a calendar arrives. */
@@ -29,7 +58,7 @@ export function ensureHolidays(codes) {
     files.set(code, 'loading')
     fetch(`data/holidays/${code}.json`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
-      .then(d => { files.set(code, { years: d.years || {} }) })
+      .then(d => { files.set(code, { years: d.years || {}, tags: d.tags || {} }) })
       .catch(() => { files.set(code, 'failed') })
       .finally(() => onLoaded())
   }

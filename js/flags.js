@@ -9,6 +9,7 @@
 //   fix    { action, arg, label } or undefined
 
 import { analyze, asEngineers } from './capacity.js'
+import { planRange, parseISO, fmtSpan } from './calendar.js'
 
 const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`
 
@@ -114,7 +115,9 @@ export function computeFlags(doc, a = analyze(doc)) {
     if (!d.members.length) {
       add('error', 'people', `Nobody is on ${label}${d.estimate ? ` (${pts(d.estimate)})` : ''}.`, t, staffingFix(d, d.estimate || 0))
     } else if (da.gap > 0) {
-      add('error', 'people', `${label} is short ${pts(da.gap)}, ${engineers(da.gap, unit)}.`, t, staffingFix(d, da.gap))
+      // Say when leave made it short: "Ana's vacation (19 to 23 Oct) takes 4" is a different conversation from a missing hire.
+      const why = da.leavePts ? ` ${da.leavePts >= da.gap ? 'Leave explains it' : `Leave explains ${pts(da.leavePts)} of it`}: ${leaveLines(da, doc).join('; ')}.` : ''
+      add('error', 'people', `${label} is short ${pts(da.gap)}, ${engineers(da.gap, unit)}.${why}`, t, staffingFix(d, da.gap))
     } else if (d.estimate && da.gap < 0) {
       add('warn', 'load', `${label} has ${pts(-da.gap)} more than its estimate.`, t, { action: 'trim', arg: d.id, label: 'Trim to fit' })
     }
@@ -173,6 +176,27 @@ export function computeFlags(doc, a = analyze(doc)) {
 }
 
 /**
+ * What each person's leave takes from a deliverable, as sentences:
+ * "Ana Rojas's vacation (19 to 23 Oct) takes 4 pts". Vacation periods are
+ * the ones that touch the plan.
+ */
+export function leaveLines(da, doc) {
+  const range = planRange(doc.settings)
+  const touches = v => range && parseISO(v.to) >= range.from && parseISO(v.from) < range.to
+  return (da.leave || []).map(l => {
+    const p = doc.people.find(x => x.id === l.person)
+    const name = p?.name.trim() || 'Unnamed'
+    const bits = []
+    if (l.vacation) {
+      const spans = (p?.vacations || []).filter(touches).map(v => fmtSpan(v.from, v.to))
+      bits.push(`${name}'s vacation${spans.length ? ` (${spans.join(', ')})` : ''} takes ${pts(l.vacation)}`)
+    }
+    if (l.away) bits.push(`${name}'s ${p?.sprintsOff === 1 ? 'sprint' : 'sprints'} away take${p?.sprintsOff === 1 ? 's' : ''} ${pts(l.away)}`)
+    return bits.join(', ')
+  })
+}
+
+/**
  * The hiring gap, the one number the Missing people tile shows. Demand the
  * hired team cannot cover (open roles do not count as hired), with what
  * explains it: open roles, work nobody is on yet, and over-booked people.
@@ -205,7 +229,7 @@ export function deliverableStatus(d, da, a, doc) {
   const unit = a.bookable || a.unit
   if (!d.estimate) return { cls: 'unsized', icon: '?', text: da.got ? `Unsized · ${da.got} pts booked` : 'Unsized: pick a Fibonacci size' }
   if (!d.members.length) return { cls: 'empty', icon: '!', text: `Nobody on it · needs ${d.estimate}` }
-  if (da.gap > 0) return { cls: 'short', icon: '!', text: `Short ${da.gap} · ${engineers(da.gap, unit)}` }
+  if (da.gap > 0) return { cls: 'short', icon: '!', text: `Short ${da.gap} · ${engineers(da.gap, unit)}`, leave: da.leavePts || 0 }
   if (da.gap < 0) return { cls: 'over', icon: '↑', text: `${-da.gap} over the estimate` }
   const people = new Map(doc.people.map(p => [p.id, p]))
   const busy = d.members.map(m => m.person).find(id => (a.people.get(id)?.free ?? 0) < 0)

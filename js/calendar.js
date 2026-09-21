@@ -121,6 +121,17 @@ export function workdaysIn(dates, s) {
   }).length
 }
 
+/** "19 to 23 Oct", or "30 Dec 2026 to 2 Jan 2027" across a year. A reversed range reads forwards. */
+export function fmtSpan(from, to) {
+  const a = parseISO(from), b = parseISO(to)
+  if (!a || !b) return ''
+  const [x, y] = a <= b ? [a, b] : [b, a]
+  if (+x === +y) return fmtDay(x)
+  const sameYear = x.getUTCFullYear() === y.getUTCFullYear()
+  if (sameYear && x.getUTCMonth() === y.getUTCMonth()) return `${x.getUTCDate()} to ${fmtDay(y)}`
+  return `${fmtDay(x, !sameYear)} to ${fmtDay(y, !sameYear)}`
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 /** "5 Oct" or "5 Oct 2026". Fixed English so the page reads the same everywhere. */
 export function fmtDay(d, withYear = false) {

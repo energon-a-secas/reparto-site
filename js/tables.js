@@ -32,6 +32,7 @@ export const TABLES = {
   engineers: 'By engineer',
   assignments: 'Assignments',
   flags: 'Flags',
+  backlog: 'Later and done',
 }
 
 export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
@@ -52,6 +53,8 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
         { key: 'status', label: 'Status', type: 'text' },
         { key: 'count', label: 'People', type: 'int' },
         { key: 'split', label: 'Who, share of their capacity (pts)', type: 'text' },
+        { key: 'leave', label: 'Lost to leave (pts)', type: 'int' },
+        { key: 'note', label: 'Note', type: 'text' },
         { key: 'flags', label: 'Flags', type: 'text' },
       ],
       rows: doc.deliverables.map(d => {
@@ -68,6 +71,8 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
             const sh = a.shares.get(shareKey(d.id, m.person))
             return `${nameOf(m.person)} ${pctText(sh.pct)} (${sh.points})`
           }).join('; '),
+          leave: da.leavePts || 0,
+          note: d.note || '',
           flags: (byId.get(d.id) || []).join(' | '),
         }
       }),
@@ -180,6 +185,26 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
           : f.target.kind === 'settings' ? 'Settings'
           : f.target.ids.map(id => (f.target.kind === 'person' ? nameOf(id) : deliv.get(id) || id)).join(', '),
         fix: f.fix?.label || '',
+      })),
+    }
+  }
+  if (kind === 'backlog') {
+    // Out of the plan, so no shares and no points: who was on it, and why it is here.
+    return {
+      name: TABLES.backlog,
+      columns: [
+        { key: 'name', label: 'Deliverable', type: 'text' },
+        { key: 'when', label: 'List', type: 'text' },
+        { key: 'estimate', label: 'Estimate (pts)', type: 'int' },
+        { key: 'people', label: 'People', type: 'text' },
+        { key: 'note', label: 'Note', type: 'text' },
+      ],
+      rows: (doc.backlog || []).map(d => ({
+        name: d.name.trim() || 'Untitled deliverable',
+        when: d.when === 'done' ? 'Done' : 'Later',
+        estimate: d.estimate ?? null,
+        people: d.members.map(m => nameOf(m.person)).join('; '),
+        note: d.note || '',
       })),
     }
   }

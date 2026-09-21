@@ -124,6 +124,19 @@ export function personCapacity(person, doc, cal = NO_CAL) {
 export const capFromRaw = (raw, a) =>
   Math.round((a.unitRaw > 0 && a.unit > 0 ? (raw * a.unit) / a.unitRaw : raw) * a.keep)
 
+/**
+ * The planned points a person's own leave takes: vacation days, and whole
+ * sprints away. Holidays and team days are everyone's, so they are not
+ * leave. What the cards and flags use to say which vacation made a
+ * deliverable short.
+ */
+function leaveOf(p, doc, cal, scale, cap) {
+  if (!(p.vacations || []).length && !p.sprintsOff) return { vacation: 0, away: 0 }
+  const noVacation = capFromRaw(personCapacity({ ...p, vacations: [] }, doc, cal).raw, scale)
+  const noLeave = p.sprintsOff ? capFromRaw(personCapacity({ ...p, vacations: [], sprintsOff: 0 }, doc, cal).raw, scale) : noVacation
+  return { vacation: Math.max(0, noVacation - cap), away: Math.max(0, noLeave - noVacation) }
+}
+
 /** A full-time engineer on the team calendar, no vacations. Gaps are expressed in these. */
 const FULL_TIME = Object.freeze({ load: 100, sprintsOff: 0, country: '', vacations: [] })
 
@@ -143,7 +156,8 @@ export function analyze(doc, cal = NO_CAL) {
   const exactSprint = Array.from({ length: s.sprints }, () => 0)
   for (const p of doc.people) {
     const pc = personCapacity(p, doc, cal)
-    people.set(p.id, { raw: pc.raw, lost: pc.lost, away: pc.away, cap: capFromRaw(pc.raw, scale), used: 0, pct: 0, count: 0 })
+    const cap = capFromRaw(pc.raw, scale)
+    people.set(p.id, { raw: pc.raw, lost: pc.lost, away: pc.away, cap, used: 0, pct: 0, count: 0, leave: leaveOf(p, doc, cal, scale, cap) })
     pc.sprints.forEach((x, i) => { exactSprint[i] += x.points * pc.factor * scale.k * scale.keep })
   }
   const shares = shareAnalysis(doc, people)
@@ -151,18 +165,24 @@ export function analyze(doc, cal = NO_CAL) {
   let demand = 0, allocated = 0, shortfall = 0, unsized = 0
   for (const d of doc.deliverables) {
     let got = 0
+    const leave = []
     for (const m of d.members) {
       const sh = shares.get(shareKey(d.id, m.person))
       if (!sh) continue
       got += sh.points
       const p = people.get(m.person)
       if (p) { p.used += sh.points; p.pct += sh.pct; p.count += 1 }
+      // A percentage share shrinks with its person's leave; fixed points do not.
+      if (p && !sh.fixed && (p.leave.vacation || p.leave.away)) {
+        const vacation = Math.round((sh.pct / 100) * p.leave.vacation), away = Math.round((sh.pct / 100) * p.leave.away)
+        if (vacation || away) leave.push({ person: m.person, vacation, away })
+      }
     }
     allocated += got
     if (d.estimate) demand += d.estimate; else unsized += 1
     const gap = d.estimate ? d.estimate - got : 0
     if (gap > 0) shortfall += gap
-    deliverables.set(d.id, { estimate: d.estimate, got, gap })
+    deliverables.set(d.id, { estimate: d.estimate, got, gap, leave, leavePts: leave.reduce((t, x) => t + x.vacation + x.away, 0) })
   }
   let capacity = 0, raw = 0, openCap = 0, free = 0, over = 0
   for (const p of doc.people) {
