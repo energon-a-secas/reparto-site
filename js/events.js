@@ -3,8 +3,8 @@
 // and inline names), one keydown handler. No inline onclick anywhere.
 
 import {
-  state, ui, snapshot, undo, redo, resetTo, setSetting, person, deliverable,
-  addPerson, addDeliverable, updateDeliverable, removeDeliverable, unassign, addDayOff, removeDayOff,
+  state, ui, snapshot, undo, redo, resetTo, setSetting, person, deliverable, saveState,
+  addPerson, addDeliverable, updateDeliverable, removeDeliverable, unassign, addDayOff, removeDayOff, setWorked, previousPlans,
 } from './state.js'
 import { analyze } from './capacity.js'
 import { parseISO } from './calendar.js'
@@ -15,10 +15,10 @@ import { afterChange, renderAll } from './render.js'
 import { bindDnd, justDragged } from './dnd.js'
 import { pickUp, putDown, cancelCarry, applyFix, show } from './actions.js'
 import { openEstimate, openShare, closePop, popAnchor, repositionPop } from './popover.js'
-import { openModal, modalKeydown, modalClick } from './modal.js'
+import { openModal, closeModal, modalKeydown, modalClick } from './modal.js'
 import { runExport, importFile } from './io.js'
 import { openExport, bindExportDialog } from './export-dialog.js'
-import { $, showToast } from './utils.js'
+import { $, showToast, escHtml } from './utils.js'
 
 export function bindEvents() {
   bindDnd()
@@ -95,13 +95,25 @@ function runAction(action, el = null) {
     case 'redo': if (redo()) { closePop({ restore: false }); afterChange() } break
     case 'example':
       resetTo(examplePlan()); afterChange()
-      showToast('Example loaded. Your previous plan is one undo away')
+      showToast('Example loaded. Your plan is kept under Plan > Restore a previous plan')
       break
     case 'blank':
+      ui.firstRun = false
       resetTo(blankPlan()); afterChange()
-      showToast('Blank plan. Your previous plan is one undo away')
+      $('cal').open = true            // a blank plan's first question is whose holidays count
+      showToast('Blank plan. Pick the team\'s countries, then add people and deliverables')
       $('personName').focus()
       break
+    case 'dismiss-intro': ui.firstRun = false; saveState(); renderAll(); break
+    case 'previous': openPrevious(); break
+    case 'restore-previous': {
+      const entry = previousPlans()[Number(el.dataset.index)]
+      if (!entry) break
+      closeModal('previousModal')
+      resetTo(entry.doc); afterChange()
+      showToast(`Restored ${entry.doc.title}. The plan it replaced is in the same list`)
+      break
+    }
     case 'import': $('importFile').click(); break
     case 'help': openModal('helpModal'); break
     case 'export': openExport(el.dataset.table); break
@@ -119,7 +131,9 @@ function runAction(action, el = null) {
     }
     case 'edit-person': openPerson(id); break
     case 'remove-person': removeEditedPerson(); break
-    case 'remove-day-off': snapshot(); removeDayOff(el.dataset.date); afterChange(); break
+    case 'remove-day-off': snapshot(); removeDayOff(el.dataset.date, el.dataset.code || ''); afterChange(); break
+    case 'work-holiday': snapshot(); setWorked(el.dataset.code, el.dataset.date, true); afterChange(); break
+    case 'unwork-holiday': snapshot(); setWorked(el.dataset.code, el.dataset.date, false); afterChange(); break
     case 'country-toggle': {
       const c = el.dataset.code, list = state.doc.settings.countries
       setCountries(list.includes(c) ? list.filter(x => x !== c) : [...list, c])
@@ -236,11 +250,23 @@ function onAddPerson(e) {
 
 function onAddDayOff(e) {
   e.preventDefault()
-  const f = e.target, date = f.elements.date.value, label = f.elements.label.value.trim()
+  const f = e.target, date = f.elements.date.value, label = f.elements.label.value.trim(), country = f.elements.country.value
   if (!parseISO(date)) { f.elements.date.focus(); return }
   snapshot()
-  if (!addDayOff(date, label || 'Team day off')) { showToast('That day is already off'); return }
+  if (!addDayOff(date, label || 'Team day off', country)) { showToast('That day is already off'); return }
   afterChange()
   f.reset()
   f.elements.date.focus()
+}
+
+// ── Previous plans ───────────────────────────────────────────
+function openPrevious() {
+  const list = previousPlans()
+  const when = t => { try { return new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) } catch { return '' } }
+  $('previousList').innerHTML = list.length
+    ? list.map((e, i) => `<li><button type="button" class="previous-btn" data-action="restore-previous" data-index="${i}">
+        <strong>${escHtml(e.doc.title || 'Untitled plan')}</strong>
+        <span>${e.doc.people.length} people, ${e.doc.deliverables.length} deliverables · replaced ${escHtml(when(e.savedAt))}</span></button></li>`).join('')
+    : '<li class="form-note">Nothing kept yet.</li>'
+  openModal('previousModal')
 }

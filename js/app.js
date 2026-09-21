@@ -18,7 +18,7 @@ function init() {
   loadIndex().then(renderAll)          // the country list fills the pickers once it lands
   if (shared) {
     afterChange()
-    showToast('Opened a shared plan. Your own plan is one undo away')
+    showToast('Opened a shared plan. Yours is kept under Plan > Restore a previous plan')
   }
 }
 

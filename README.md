@@ -33,7 +33,8 @@ Drag people onto deliverables and see the capacity gaps
 Reparto turns a quarter into story points and splits them across the work. Set the
 week (four focus days, one for meetings), the sprint and the plan length, and it
 works out what one engineer can carry, rounded onto the same Fibonacci scale the
-work is sized on: 8 points a sprint over 4 sprints is 32, planned as 34. Then drag
+work is sized on: 8 points a sprint over 4 sprints is 32, planned as 34. Everyone
+else scales from that engineer, so a vacation day moves a person a little, not 13 points. Then drag
 people onto deliverables and read the flags: what has no estimate, who is missing,
 who is booked past their capacity, and how many engineers the gap is worth.
 
@@ -49,14 +50,17 @@ the one in Mexico alone.
 ## Features
 
 - **The formula is the settings** -- weeks a sprint, working days, the meeting day toggle, points a focus day, a sprint cap, sprints in the plan (Quarter · 6 or Two months · 4), a buffer, and how capacity rounds (nearest Fibonacci, up, down or not at all), each an editable term in one visible chain
-- **Real dates** -- sprints start on the date you pick (next quarter's first Monday by default), and the calendar folds to one summary line once it is set
+- **Real dates** -- sprints start on the date you pick (next quarter's first Monday by default), each sprint shows the team's points so a holiday-heavy sprint stands out, and the calendar folds to one summary line once it is set
+- **Correct the calendar** -- mark a public holiday as worked, or scope a team day off to one country
+- **Nothing is lost** -- a share link, an import or a new plan keeps the plan it replaced under Plan > Restore a previous plan
 - **Several countries, one team** -- the United States, Colombia, Chile, Peru, Argentina and Mexico are one tap each, any of 207 countries (2025 to 2030) is a pick away; each person follows their own country's holidays, anyone without one follows the team default, and a flag names who that is
 - **Vacations** -- per-person periods; a day off only costs a focus day on a working day, and a week spent entirely away costs no meeting day either
 - **Drag and drop** -- people from the roster onto deliverables, shares from one card to another, a share back to the roster to remove it; tap or Enter picks someone up for touch and keyboard, and the page scrolls when a drag nears the edge
 - **Split anyone's time by percentage** -- a person can be 50% on one initiative, 20% on another and 30% on a third, and each deliverable can take as many people as it needs; shares are percentages of the person's capacity, so their points follow vacations, holidays and the sprint count, and one person's shares are rounded together so they always add up
-- **Sensible shares** -- a drop gives what the person has free, up to what the deliverable still needs; click a share to set a percentage or exact points, cover the gap, or give all their free time; the pencil on a row shows and edits their whole split, with Split evenly
+- **Sensible shares** -- a drop gives what the person has free, up to what the deliverable still needs; click a share to set a percentage, or a number of points kept as the matching percentage, cover the gap, or give all their free time; the pencil on a row shows and edits their whole split, with Split evenly
 - **Fibonacci estimates** -- size a deliverable from the scale, or from engineers × sprints or focus days, rounded up to the next number on the scale
-- **Flags that point somewhere** -- missing estimates, people with no country, deliverables nobody took, short or over-staffed work, over-booked people, open roles carrying work, a plan bigger than the team; each one jumps to its card, and several carry a one-step fix (add the person with the most room, size it, trim it, add open roles)
+- **At risk, not just staffed** -- a card staffed by someone over-booked or by an open role says so, in amber, on the card and in every export; the Missing people tile is the hiring gap and agrees with the team flags
+- **Flags that point somewhere** -- missing estimates, people with no country, deliverables nobody took, short or over-staffed work, over-booked people, open roles carrying work, a plan bigger than the team; each one jumps to its card, and several carry a one-step fix that lands exactly (top up someone already on it, add the best-matching person, scale an over-booked person to 100%, size it, trim it, pick countries, add open roles)
 - **Totals in points and engineers** -- team capacity, demand, booked and missing, with every gap also expressed as engineers at one full plan each
 - **Works on a phone** -- the page scrolls through the roster, a long press starts a drag, a tap carries someone to a card, and a sticky line above the board keeps the top flag and its fix in view
 - **Spreadsheet and table export** -- a real .xlsx with a sheet per table (by deliverable, by engineer, assignments for pivot tables, the flags, and the settings behind the numbers), or any one table as CSV, a paste straight into Google Sheets or Excel, or a Markdown table; the Flags panel exports its findings in one click, and a live preview shows the rows before they leave

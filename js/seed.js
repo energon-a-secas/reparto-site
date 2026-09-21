@@ -1,8 +1,8 @@
 // ── Example plan ─────────────────────────────────────────────
 // Six people and seven deliverables, wrong on purpose so every kind of flag
 // shows up on first load: an unsized deliverable, one nobody took, one short
-// of people, Bruno split 50% and 62% (112%, over-booked), one open role carrying work, a 55 that
-// should be split, and a vacation that leaves Ana over-booked. Fixing them is
+// of people, Bruno split 50% and 62% (112%, over-booked), one open role carrying work, and a 55 that
+// one person cannot carry. Ana's week of vacation takes her to 30 points. Fixing them is
 // the tour. The team spans Chile and Mexico (Diego works from Mexico), and the
 // open role has no country yet, which is itself a flag.
 
@@ -30,7 +30,7 @@ export function examplePlan() {
     deliverables: [
       { id: 'checkout', name: 'Checkout redesign', estimate: 34, note: '', members: [{ person: 'bruno', pct: 50 }, { person: 'carla', pct: 50 }] },
       { id: 'payments', name: 'Payments API v2', estimate: 55, note: '', members: [{ person: 'ana', pct: 100 }] },
-      { id: 'onboarding', name: 'Mobile onboarding', estimate: 21, note: '', members: [{ person: 'diego', pct: 100 }] },
+      { id: 'onboarding', name: 'Mobile onboarding', estimate: 21, note: '', members: [{ person: 'diego', pct: 84 }] },
       { id: 'search', name: 'Search relevance', estimate: null, note: '', members: [{ person: 'carla', pct: 25 }] },
       { id: 'export', name: 'Data export', estimate: 13, note: '', members: [{ person: 'open-1', pct: 38 }] },
       { id: 'a11y', name: 'Accessibility audit', estimate: 8, note: '', members: [] },

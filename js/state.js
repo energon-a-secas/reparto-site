@@ -28,6 +28,7 @@ const num = (v, lo, hi, dflt) => {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt
 }
 const str = (v, max = 80) => (typeof v === 'string' ? v.slice(0, max) : '')
+const dedupe = (list, key) => { const seen = new Set(); return list.filter(x => !seen.has(key(x)) && seen.add(key(x))) }
 const date = v => (parseISO(v) ? v : '')
 const code = v => (typeof v === 'string' && /^[A-Z]{2}$/.test(v) ? v : '')
 
@@ -57,14 +58,17 @@ export function normalizeDoc(raw) {
     startDate: date(s.startDate) || defaultStart(),
     // A plan saved before multi-country holidays carries one `country`.
     countries: [...new Set((Array.isArray(raw.settings?.countries) ? raw.settings.countries : [raw.settings?.country]).map(code).filter(Boolean))].slice(0, 12),
-    weeksPerSprint: num(s.weeksPerSprint, 1, 4, 2),
-    daysPerWeek: num(s.daysPerWeek, 1, 7, 5),
+    weeksPerSprint: Math.round(num(s.weeksPerSprint, 1, 4, 2)),
+    daysPerWeek: Math.round(num(s.daysPerWeek, 1, 7, 5)),
     meetingDay: !!s.meetingDay,
     pointsPerDay: num(s.pointsPerDay, 0.5, 3, 1),
     sprintCap: num(s.sprintCap, 0, 89, 0),
     sprints: num(Math.round(s.sprints), 1, 13, 4),
     buffer: num(s.buffer, 0, 50, 0),
     rounding: s.rounding in ROUNDING ? s.rounding : 'nearest',
+    // Public holidays a country's team works anyway: [{ country, date }].
+    worked: dedupe((Array.isArray(s.worked) ? s.worked : [])
+      .map(w => ({ country: code(w?.country), date: date(w?.date) })).filter(w => w.country && w.date), w => `${w.country}|${w.date}`).slice(0, 60),
   }
   const people = []
   const seen = new Set()
@@ -92,7 +96,7 @@ export function normalizeDoc(raw) {
     for (const m of Array.isArray(d.members) ? d.members : []) {
       if (!m || !people.some(p => p.id === m.person) || members.some(x => x.person === m.person)) continue
       // pct is the share of the person's capacity (dynamic); points is a fixed share from before percentages.
-      if (m.pct != null && Number.isFinite(Number(m.pct))) members.push({ person: m.person, pct: Math.round(num(m.pct, 0.5, 400, 100) * 100) / 100 })
+      if (m.pct != null && Number.isFinite(Number(m.pct))) members.push({ person: m.person, pct: Math.round(num(m.pct, 1, 400, 100) * 100) / 100 })
       else members.push({ person: m.person, points: num(Math.round(m.points), 1, 999, 1) })
     }
     const est = Number(d.estimate)
@@ -104,8 +108,8 @@ export function normalizeDoc(raw) {
   }
   const daysOff = []
   for (const t of Array.isArray(raw.daysOff) ? raw.daysOff : []) {
-    const d = date(t?.date)
-    if (d && !daysOff.some(x => x.date === d)) daysOff.push({ date: d, label: str(t.label, 60) })
+    const d = date(t?.date), c = code(t?.country)
+    if (d && !daysOff.some(x => x.date === d && x.country === c)) daysOff.push({ date: d, label: str(t.label, 60), country: c })
     if (daysOff.length >= 200) break
   }
   daysOff.sort((a, b) => a.date.localeCompare(b.date))
@@ -148,10 +152,38 @@ export function redo() {
 export const canUndo = () => undoStack.length > 0
 export const canRedo = () => redoStack.length > 0
 
-/** Replace the whole plan (example, import, share link, reset). Undoable. */
+/** Replace the whole plan (example, import, share link, reset). Undoable, and the replaced plan is kept. */
 export function resetTo(doc) {
+  const next = normalizeDoc(doc)
+  keepPrevious(next)
   snapshot()
-  state.doc = normalizeDoc(doc)
+  state.doc = next
+}
+
+// ── Previous plans ───────────────────────────────────────────
+// Undo lives in memory, so a share link that replaced your plan used to be
+// the end of it once the tab reloaded. The last five replaced plans are kept
+// in localStorage and offered under Plan > Restore a previous plan.
+const PREVIOUS_KEY = 'reparto-v1-previous'
+const PREVIOUS_MAX = 5
+
+export function previousPlans() {
+  try {
+    const list = JSON.parse(localStorage.getItem(PREVIOUS_KEY) || '[]')
+    return Array.isArray(list) ? list.filter(x => x && x.doc) : []
+  } catch { return [] }
+}
+
+function keepPrevious(incoming) {
+  try {
+    const current = state.doc
+    if (!current || (!current.people.length && !current.deliverables.length)) return
+    const json = JSON.stringify(current)
+    const list = previousPlans()
+    if (json === JSON.stringify(incoming) || (list[0] && JSON.stringify(list[0].doc) === json)) return
+    list.unshift({ title: current.title, savedAt: Date.now(), doc: current })
+    localStorage.setItem(PREVIOUS_KEY, JSON.stringify(list.slice(0, PREVIOUS_MAX)))
+  } catch { /* private mode or full: nothing to keep */ }
 }
 
 // ── Lookups ──────────────────────────────────────────────────
@@ -172,13 +204,22 @@ export function updatePerson(id, fields) {
   if (fields.vacations) p.vacations = periods(fields.vacations)
 }
 
-export function addDayOff(date, label) {
-  if (!parseISO(date) || state.doc.daysOff.some(x => x.date === date)) return false
-  state.doc.daysOff.push({ date, label: str(label, 60) })
+export function addDayOff(date, label, country = '') {
+  if (!parseISO(date) || state.doc.daysOff.some(x => x.date === date && x.country === country)) return false
+  state.doc.daysOff.push({ date, label: str(label, 60), country: code(country) })
   state.doc.daysOff.sort((a, b) => a.date.localeCompare(b.date))
   return true
 }
-export function removeDayOff(date) { state.doc.daysOff = state.doc.daysOff.filter(x => x.date !== date) }
+export function removeDayOff(date, country = '') {
+  state.doc.daysOff = state.doc.daysOff.filter(x => !(x.date === date && (x.country || '') === (country || '')))
+}
+
+/** Mark one country's public holiday as worked (on), or count it again (off). */
+export function setWorked(country, date, on) {
+  const s = state.doc.settings
+  s.worked = (s.worked || []).filter(w => !(w.country === country && w.date === date))
+  if (on) s.worked.push({ country, date })
+}
 export function removePerson(id) {
   state.doc.people = state.doc.people.filter(p => p.id !== id)
   for (const d of state.doc.deliverables) d.members = d.members.filter(m => m.person !== id)
@@ -192,7 +233,7 @@ export function addDeliverable(fields = {}) {
 export function updateDeliverable(id, fields) { Object.assign(deliverable(id) || {}, fields) }
 export function removeDeliverable(id) { state.doc.deliverables = state.doc.deliverables.filter(d => d.id !== id) }
 
-const pct2 = x => Math.round(Math.min(400, Math.max(0.5, x)) * 100) / 100
+const pct2 = x => Math.round(Math.min(400, Math.max(1, x)) * 100) / 100
 
 /**
  * Give a person `pct` percent of their capacity on a deliverable. An existing
@@ -206,6 +247,19 @@ export function assign(delivId, personId, pct, fixedPct = 0) {
   else d.members.push({ person: personId, pct: pct2(pct) })
   return true
 }
+/**
+ * Multiply every share a person holds by `factor` (Scale to 100%). A
+ * fixed-points share goes through `effective`, its percent as analysed.
+ */
+export function scaleShares(personId, factor, effective = new Map()) {
+  for (const d of state.doc.deliverables) {
+    const m = d.members.find(x => x.person === personId)
+    if (!m) continue
+    m.pct = pct2((m.pct ?? effective.get(d.id) ?? 0) * factor)
+    delete m.points
+  }
+}
+
 /** Set one share to `pct` percent of the person's capacity. */
 export function setShare(delivId, personId, pct) {
   const m = deliverable(delivId)?.members.find(x => x.person === personId)

@@ -2,8 +2,8 @@
 // The operations more than one input path reaches: a pointer drop, a
 // keyboard carry and a flag's fix all land here, so they cannot disagree.
 
-import { state, ui, snapshot, person, deliverable, assign, unassign, moveShare, setShare, addPerson } from './state.js'
-import { analyze, pctFor, shareKey } from './capacity.js'
+import { state, ui, snapshot, person, deliverable, assign, unassign, moveShare, setShare, addPerson, scaleShares } from './state.js'
+import { analyze, shareKey, pctForPoints, trimShares } from './capacity.js'
 import { cal } from './holidays.js'
 import { afterChange, renderAll } from './render.js'
 import { showToast, fmtPct } from './utils.js'
@@ -53,9 +53,12 @@ export function dropPerson(personId, from, target) {
   const a = analyze(state.doc, cal)
   const pa = a.people.get(personId)
   const pts = defaultShare(personId, target, a)
-  // No capacity to take a percentage of: a full share, and the flags say why.
-  const pct = pa.cap ? pctFor(pts, pa.cap) : 100
-  snapshot(); assign(target, personId, pct, a.shares.get(shareKey(target, personId))?.pct ?? 0); afterChange()
+  const had = a.shares.get(shareKey(target, personId))
+  // The exact percentage that gives the points promised; no capacity: a full share, and the flags say why.
+  const pct = pa.cap ? pctForPoints(state.doc, cal, target, personId, (had?.points ?? 0) + pts) : 100
+  snapshot()
+  if (had) setShare(target, personId, pct); else assign(target, personId, pct)
+  afterChange()
   const after = analyze(state.doc, cal)
   const got = after.shares.get(shareKey(target, personId))
   const left = after.people.get(personId).free
@@ -87,6 +90,8 @@ export function putDown(target) {
 }
 
 // ── Flag fixes ───────────────────────────────────────────────
+// Every fix lands exactly: it computes the points it promises and stores the
+// percentage that gives them (pctForPoints), so a fix never raises a new flag.
 export function applyFix(action, arg, openEstimate) {
   // Instant scroll: the picker anchors to the card, so the card must be on screen first.
   if (action === 'size') { show('deliverable', [arg], { instant: true }); openEstimate(arg); return }
@@ -96,29 +101,49 @@ export function applyFix(action, arg, openEstimate) {
     show('deliverable', [did])
     return
   }
+  if (action === 'topup') {
+    const [did, pid] = arg.split(':')
+    const a = analyze(state.doc, cal)
+    const sh = a.shares.get(shareKey(did, pid)), free = a.people.get(pid)?.free ?? 0, gap = a.deliverables.get(did)?.gap ?? 0
+    const n = Math.min(gap, free)
+    if (!sh || n <= 0) return
+    snapshot(); setShare(did, pid, pctForPoints(state.doc, cal, did, pid, sh.points + n)); afterChange()
+    show('deliverable', [did])
+    showToast(`${nameOf(person(pid))} gives ${n} more pts to ${deliverable(did)?.name || 'the deliverable'}`)
+    return
+  }
+  if (action === 'rebalance') {
+    const a = analyze(state.doc, cal)
+    const pa = a.people.get(arg); if (!pa?.pct) return
+    const effective = new Map(state.doc.deliverables.filter(d => d.members.some(m => m.person === arg)).map(d => [d.id, a.shares.get(shareKey(d.id, arg)).pct]))
+    snapshot(); scaleShares(arg, 100 / pa.pct, effective); afterChange()
+    const b = analyze(state.doc, cal)
+    const split = state.doc.deliverables.filter(d => d.members.some(m => m.person === arg))
+      .map(d => `${d.name || 'Untitled'} ${fmtPct(b.shares.get(shareKey(d.id, arg)).pct)}`).join(', ')
+    showToast(`${nameOf(person(arg))}: ${split}, ${Math.max(0, -b.people.get(arg).free)} over`)
+    return
+  }
+  if (action === 'countries') {
+    const cal = document.getElementById('cal')
+    if (cal) { cal.open = true; cal.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+    document.querySelector('#countryPicks button')?.focus({ preventScroll: true })
+    return
+  }
   if (action === 'trim') {
     const d = deliverable(arg); if (!d?.estimate) return
-    const a = analyze(state.doc, cal)
-    snapshot()
-    // Cut from the last share first, in points, then store what is left as a percentage.
-    let extra = a.deliverables.get(d.id).got - d.estimate
-    for (const m of [...d.members].reverse()) {
-      if (extra <= 0) break
-      const sh = a.shares.get(shareKey(d.id, m.person)), cap = a.people.get(m.person)?.cap ?? 0
-      const cut = Math.min(extra, sh.points)
-      extra -= cut
-      if (cut === sh.points || !cap) unassign(d.id, m.person); else setShare(d.id, m.person, pctFor(sh.points - cut, cap))
-    }
-    afterChange()
+    const members = trimShares(state.doc, cal, d.id)
+    snapshot(); d.members = members; afterChange()
     showToast(`${d.name || 'Deliverable'} trimmed to ${d.estimate} pts`)
     return
   }
   if (action === 'open-roles') {
     const n = Math.max(1, Math.min(10, Number(arg) || 1))
+    const countries = state.doc.settings.countries
     snapshot()
     const have = state.doc.people.filter(p => p.open).length
     const ids = []
-    for (let i = 1; i <= n; i++) ids.push(addPerson({ name: `Open role ${have + i}`, role: 'To hire', open: true }).id)
+    // With several countries a new role gets the default one, so it does not raise "has no country".
+    for (let i = 1; i <= n; i++) ids.push(addPerson({ name: `Open role ${have + i}`, role: 'To hire', open: true, country: countries.length > 1 ? countries[0] : '' }).id)
     afterChange()
     show('person', ids)
     showToast(`${n} open role${n === 1 ? '' : 's'} added. Drag them onto what is short.`)

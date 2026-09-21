@@ -73,12 +73,14 @@ test('by deliverable: one row each, split and flags carried', () => {
   assert.equal(t.rows.length, 7)
   const checkout = t.rows.find(r => r.name === 'Checkout redesign')
   assert.equal(checkout.booked, 34)
-  assert.equal(checkout.status, 'Staffed')
+  assert.match(checkout.status, /^At risk/)
   assert.match(checkout.split, /^Bruno Silva 50% \(17\); Carla Méndez 50% \(17\)$/)
   const payments = t.rows.find(r => r.name === 'Payments API v2')
-  assert.equal(payments.gap, 34)
-  assert.equal(payments.engineers, 1)
-  assert.match(payments.flags, /short 34 pts/)
+  const gap = 55 - a.people.get('ana').cap                    // Ana is on it alone, at 100%
+  assert.equal(payments.gap, gap)
+  assert.equal(payments.engineers, Math.round((gap / a.bookable) * 10) / 10)
+  assert.match(payments.flags, new RegExp(`short ${gap} pts`))
+  assert.match(t.rows.find(r => r.name === 'Checkout redesign').status, /^At risk: Staffed, but Bruno Silva is 4 over/)
   assert.equal(t.rows.find(r => r.name === 'Search relevance').estimate, null)
 })
 

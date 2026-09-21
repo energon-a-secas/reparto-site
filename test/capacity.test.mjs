@@ -50,12 +50,12 @@ test('Chile Q4 2026: one weekday holiday (12 Oct), two on a weekend', () => {
   assert.equal(a.unit, 34)
 })
 
-test('a full vacation week costs its meeting day too: 32 - 1 - 4 = 27 -> 21', () => {
+test('a full vacation week costs its meeting day too: 32 - 1 - 4 = 27, scaled 34/31 to 30', () => {
   const doc = plan({ countries: ['CL'] }, [{ vacations: [{ from: '2026-10-19', to: '2026-10-23' }] }])
   const pc = personCapacity(doc.people[0], doc, cal)
   assert.equal(pc.lost.vacation, 5)
   assert.equal(pc.raw, 27)
-  assert.equal(analyze(doc, cal).people.get('p0').cap, 21)
+  assert.equal(analyze(doc, cal).people.get('p0').cap, 30)       // not 21: only the full-timer is rounded
 })
 
 test('team days off hit everyone, weekends cost nothing', () => {
@@ -64,10 +64,11 @@ test('team days off hit everyone, weekends cost nothing', () => {
   assert.equal(workdaysIn(['2026-11-20', '2026-11-21', '2026-11-22'], doc.settings), 1)
 })
 
-test('load, sprints away and buffer scale after the calendar', () => {
+test('load and sprints away scale the calendar; the buffer comes off after rounding', () => {
   const doc = plan({ countries: ['CL'], buffer: 10 }, [{ load: 50, sprintsOff: 1 }])
-  // 31 after the holiday, x 3/4 sprints, x 50%, x 90%
-  assert.equal(+personCapacity(doc.people[0], doc, cal).raw.toFixed(3), +(31 * 0.75 * 0.5 * 0.9).toFixed(3))
+  // 31 after the holiday, x 3/4 sprints, x 50% = 11.625 raw; x 34/31, x 90% = 11.5 -> 11
+  assert.equal(+personCapacity(doc.people[0], doc, cal).raw.toFixed(3), 11.625)
+  assert.equal(analyze(doc, cal).people.get('p0').cap, 11)
 })
 
 test('a plan that crosses the year reads both years of holidays', () => {
@@ -112,7 +113,7 @@ test('flags: missing estimate, nobody on it, short, over-booked, team short', ()
   has(/^error:data:A has no estimate/)
   has(/^error:people:Nobody is on B/)
   has(/^error:people:C is short 21 pts/)
-  has(/^error:load:P0 is booked 124% of their time \(42 of 34 pts\), 8 over/)
+  has(/^error:load:P0 is booked 124% of their capacity \(42 of 34 pts\), 8 over/)
   has(/^error:people:The plan needs 97 pts and the team has 68/)
   has(/^warn:practice:C \(55 pts\) is bigger than one engineer/)
 })
@@ -123,8 +124,9 @@ const deliv = (id, estimate, members) => ({ id, name: id.toUpperCase(), estimate
 test('a percentage share follows the person\'s capacity', () => {
   const d = plan({}, [{}], [deliv('x', 21, [{ person: 'p0', pct: 50 }])])
   assert.equal(analyze(d).shares.get(shareKey('x', 'p0')).points, 17)          // 50% of 34
-  d.people[0].vacations = [{ from: '2026-10-19', to: '2026-10-30' }]           // two weeks off: 32 - 8 = 24 -> 21
-  assert.equal(analyze(d).shares.get(shareKey('x', 'p0')).points, 11)          // 50% of 21, rounded half up
+  d.people[0].vacations = [{ from: '2026-10-19', to: '2026-10-30' }]           // two weeks off: 24 raw, x 34/32 = 25.5 -> 26
+  assert.equal(analyze(d).people.get('p0').cap, 26)
+  assert.equal(analyze(d).shares.get(shareKey('x', 'p0')).points, 13)          // 50% of 26
 })
 
 test('one person\'s shares round together and add up exactly', () => {
@@ -149,7 +151,7 @@ test('over 100% books past capacity and is flagged', () => {
   const a = analyze(d)
   assert.equal(a.people.get('p0').used, 38)                                    // 17 + 21.08 -> 38
   assert.equal(a.people.get('p0').free, -4)
-  assert.ok(computeFlags(d, a).some(f => /booked 112% of their time/.test(f.text)))
+  assert.ok(computeFlags(d, a).some(f => /booked 112% of their capacity/.test(f.text)))
 })
 
 test('several people on one deliverable, one person on several', () => {

@@ -6,13 +6,19 @@
 //   focus days a week  = 5 working days - 1 meeting day            = 4
 //   points a sprint    = 2 weeks x 4 focus days x 1 point a day      = 8
 //   before days off    = 8 points x 4 sprints                        = 32
-//   raw per engineer   = 32 - holidays, team days off, vacations    (calendar.js)
+//   raw per engineer   = 32 - holidays and team days off (calendar.js) = 31 in Chile
 //   planned            = raw rounded onto the Fibonacci scale        = 34
+//   bookable           = planned - the buffer                         = 34 at 0%
+//
+// Only the full-time engineer is rounded. Everyone else is their own raw
+// capacity scaled by the same factor (34 / 31) and the same buffer, so a
+// vacation day, a load step or a holiday moves a person smoothly instead of
+// jumping them from 34 to 21 at a Fibonacci boundary.
 
 import { personSprints, nextQuarterStart } from './calendar.js'
 
 /** The estimation scale. A deliverable is sized with one of these. */
-export const SCALE = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89]
+export const SCALE = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233]
 
 const FIB = (() => {
   const out = [1, 2]
@@ -96,20 +102,21 @@ export const sprintPoints = s => (s.sprintCap > 0 ? Math.min(s.sprintCap, sprint
 export const NO_CAL = Object.freeze({ holidays: () => null, status: () => 'none' })
 
 /**
- * One person's capacity before rounding, and what the calendar took from it.
- * Sprints away scale the total; load and buffer come last.
+ * One person's capacity before rounding and buffer, and what the calendar
+ * took from it. Sprints away and load scale the calendar's total; `factor`
+ * is that scale, so a per-sprint figure is sprint.points x factor.
  */
 export function personCapacity(person, doc, cal = NO_CAL) {
   const s = doc.settings
   const { sprints, lost } = personSprints(person, doc, cal.holidays)
   const total = sprints.reduce((t, x) => t + x.points, 0)
   const away = Math.min(s.sprints, Math.max(0, Math.round(person.sprintsOff || 0)))
-  const share = s.sprints ? (s.sprints - away) / s.sprints : 0
-  const raw = total * share * ((person.load ?? 100) / 100) * (1 - (s.buffer || 0) / 100)
-  return { raw, total, lost, away }
+  const factor = (s.sprints ? (s.sprints - away) / s.sprints : 0) * ((person.load ?? 100) / 100)
+  return { raw: total * factor, total, lost, away, sprints, factor }
 }
 
-export const capacityOf = (person, doc, cal) => roundFib(personCapacity(person, doc, cal).raw, doc.settings.rounding)
+/** A person's bookable points from their raw capacity: the full-timer's rounding factor, then the buffer. */
+export const capFromRaw = (raw, a) => Math.round(raw * a.k * a.keep)
 
 /** A full-time engineer on the team calendar, no vacations. Gaps are expressed in these. */
 const FULL_TIME = Object.freeze({ load: 100, sprintsOff: 0, country: '', vacations: [] })
@@ -121,10 +128,17 @@ const FULL_TIME = Object.freeze({ load: 100, sprintsOff: 0, country: '', vacatio
  */
 export function analyze(doc, cal = NO_CAL) {
   const s = doc.settings
+  const ft = personCapacity(FULL_TIME, doc, cal)
+  const unitRaw = ft.raw
+  const unit = roundFib(unitRaw, s.rounding)
+  const scale = { k: unitRaw ? unit / unitRaw : 0, keep: 1 - (s.buffer || 0) / 100 }
+  const bookable = Math.round(unit * scale.keep)
   const people = new Map()
+  const perSprint = Array.from({ length: s.sprints }, () => 0)
   for (const p of doc.people) {
     const pc = personCapacity(p, doc, cal)
-    people.set(p.id, { raw: pc.raw, lost: pc.lost, away: pc.away, cap: roundFib(pc.raw, s.rounding), used: 0, pct: 0, count: 0 })
+    people.set(p.id, { raw: pc.raw, lost: pc.lost, away: pc.away, cap: capFromRaw(pc.raw, scale), used: 0, pct: 0, count: 0 })
+    pc.sprints.forEach((x, i) => { perSprint[i] += x.points * pc.factor * scale.k * scale.keep })
   }
   const shares = shareAnalysis(doc, people)
   const deliverables = new Map()
@@ -152,14 +166,16 @@ export function analyze(doc, cal = NO_CAL) {
     if (p.open) openCap += a.cap
     if (a.free > 0) free += a.free; else over += -a.free
   }
-  const ft = personCapacity(FULL_TIME, doc, cal)
   const base = sprintPoints(s) * s.sprints
   return {
     sprint: sprintPoints(s), derived: sprintDerived(s), focus: focusDays(s),
     base,                                   // 8 x 4 = 32, before the calendar
     offPts: base - ft.total,                // what holidays and team days took from a full-timer
     offDays: ft.lost.holiday + ft.lost.team,
-    unitRaw: ft.raw, unit: roundFib(ft.raw, s.rounding),
+    unitRaw, unit,                          // 31 raw, 34 planned: the one number that is rounded
+    k: scale.k, keep: scale.keep,           // everyone else: raw x k x keep
+    bookable, held: unit - bookable,        // one engineer after the buffer: gaps are counted in these
+    perSprint: perSprint.map(Math.round),   // team points in each sprint, same factors as the caps
     people, deliverables, shares, capacity, raw, openCap, hiredCap: capacity - openCap,
     demand, allocated, shortfall, unsized, free, over,
     calendar: calendarStatus(doc, cal),
@@ -195,16 +211,71 @@ export function shareAnalysis(doc, people) {
     }
   }
   for (const [pid, list] of byPerson) {
-    const cap = people.get(pid)?.cap ?? 0
-    const exact = list.map(x => (cap * x.pct) / 100)
-    const floors = exact.map(Math.floor)
-    const target = Math.round(exact.reduce((t, x) => t + x, 0))
-    let left = target - floors.reduce((t, x) => t + x, 0)
-    const order = exact.map((x, i) => [x - floors[i], i]).sort((a, b) => b[0] - a[0] || a[1] - b[1])
-    for (const [, i] of order) { if (left <= 0) break; floors[i] += 1; left -= 1 }
-    list.forEach((x, i) => out.set(x.key, { points: floors[i], pct: x.pct, fixed: false }))
+    const pts = splitPoints(people.get(pid)?.cap ?? 0, list.map(x => x.pct))
+    list.forEach((x, i) => out.set(x.key, { points: pts[i], pct: x.pct, fixed: false }))
   }
   return out
+}
+
+/** Largest remainder: whole points for each percentage of `cap`, adding up to round(cap x total% / 100). */
+export function splitPoints(cap, pcts) {
+  const exact = pcts.map(p => (cap * p) / 100)
+  const floors = exact.map(Math.floor)
+  const target = Math.round(exact.reduce((t, x) => t + x, 0))
+  let left = target - floors.reduce((t, x) => t + x, 0)
+  const order = exact.map((x, i) => [x - floors[i], i]).sort((a, b) => b[0] - a[0] || a[1] - b[1])
+  for (const [, i] of order) { if (left <= 0) break; floors[i] += 1; left -= 1 }
+  return floors
+}
+
+const withShare = (doc, delivId, personId, pct) => {
+  const next = structuredClone(doc)
+  const m = next.deliverables.find(d => d.id === delivId)?.members.find(x => x.person === personId)
+  if (m) { m.pct = pct; delete m.points } else next.deliverables.find(d => d.id === delivId)?.members.push({ person: personId, pct })
+  return next
+}
+
+/**
+ * The percentage that gives a share exactly `points`, without moving the
+ * person's other shares. Largest-remainder rounding can land a plain
+ * points / cap one point off, so it tries a few nudges and checks each.
+ */
+export function pctForPoints(doc, cal, delivId, personId, points) {
+  const a = analyze(doc, cal)
+  const cap = a.people.get(personId)?.cap ?? 0
+  if (!cap) return pctFor(points, cap)
+  const others = doc.deliverables.filter(d => d.id !== delivId && d.members.some(m => m.person === personId))
+    .map(d => [d.id, a.shares.get(shareKey(d.id, personId)).points])
+  for (const nudge of [0, -0.4, 0.4, -0.45, 0.45, -0.25, 0.25]) {
+    const pct = pctFor(points + nudge, cap)
+    if (!(pct > 0)) continue
+    const b = analyze(withShare(doc, delivId, personId, pct), cal)
+    if (b.shares.get(shareKey(delivId, personId))?.points === points
+      && others.every(([id, pts]) => b.shares.get(shareKey(id, personId)).points === pts)) return pct
+  }
+  return pctFor(points, cap)
+}
+
+/**
+ * The members a deliverable keeps after trimming it to its estimate: cut
+ * from the last share first, each remaining share set to the exact
+ * percentage that gives its new points. Pure; the caller swaps them in.
+ */
+export function trimShares(doc, cal, delivId) {
+  let work = structuredClone(doc)
+  const d = () => work.deliverables.find(x => x.id === delivId)
+  if (!d()?.estimate) return d()?.members || []
+  const a = analyze(work, cal)
+  let extra = a.deliverables.get(delivId).got - d().estimate
+  for (const m of [...d().members].reverse()) {
+    if (extra <= 0) break
+    const pts = analyze(work, cal).shares.get(shareKey(delivId, m.person)).points
+    const cut = Math.min(extra, pts)
+    extra -= cut
+    if (cut === pts || !(analyze(work, cal).people.get(m.person)?.cap)) d().members = d().members.filter(x => x.person !== m.person)
+    else work = withShare(work, delivId, m.person, pctForPoints(work, cal, delivId, m.person, pts - cut))
+  }
+  return d().members
 }
 
 /** A percentage that gives `points` of a capacity, kept to two decimals. */

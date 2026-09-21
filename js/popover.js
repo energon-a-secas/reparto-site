@@ -3,7 +3,8 @@
 // is remembered by data-key, not by node, because every change re-renders.
 
 import { state, snapshot, deliverable, person, updateDeliverable, setShare, unassign } from './state.js'
-import { SCALE, fibCeil, analyze, pctFor, shareKey } from './capacity.js'
+import { SCALE, fibCeil, analyze, shareKey, pctForPoints } from './capacity.js'
+import { engineers } from './flags.js'
 import { cal } from './holidays.js'
 import { afterChange } from './render.js'
 import { $, escHtml, showToast, fmtPct } from './utils.js'
@@ -87,13 +88,13 @@ export function openEstimate(delivId) {
     <p class="pop-note">An estimate rounds up: when the team is unsure, the bigger number is the honest one.</p>`,
   'Size the deliverable')
   if (!pop) return
-  const sprint = analyze(state.doc, cal).sprint
+  const a = analyze(state.doc, cal)
   const recalc = () => {
     const eng = Number(pop.querySelector('[data-in="eng"]').value) || 0
     const spr = Number(pop.querySelector('[data-in="spr"]').value) || 0
     const days = Number(pop.querySelector('[data-in="days"]').value) || 0
-    suggest(pop.querySelector('[data-out="team"]'), eng * spr * sprint)
-    suggest(pop.querySelector('[data-out="days"]'), days * s.pointsPerDay)
+    suggest(pop.querySelector('[data-out="team"]'), eng * spr * a.sprint, a.bookable)
+    suggest(pop.querySelector('[data-out="days"]'), days * s.pointsPerDay, a.bookable)
   }
   pop.querySelectorAll('[data-in]').forEach(i => i.addEventListener('input', recalc))
   recalc()
@@ -109,11 +110,12 @@ export function openEstimate(delivId) {
   }
 }
 
-function suggest(out, raw) {
+/** The rounded-up suggestion, and what it asks of the team in engineers at one plan each. */
+function suggest(out, raw, unit) {
   const f = fibCeil(raw)
   const fits = SCALE.includes(f)
   out.innerHTML = raw > 0
-    ? `= ${Number.isInteger(raw) ? raw : raw.toFixed(1)} → ${fits ? `<button type="button" class="scale-btn scale-btn--suggest" data-pick="${f}">${f}</button>` : `<span class="warn-text">${f}, off the scale: split it</span>`}`
+    ? `= ${Number.isInteger(raw) ? raw : raw.toFixed(1)} → ${fits ? `<button type="button" class="scale-btn scale-btn--suggest" data-pick="${f}">${f}</button><span class="pop-eng">· ${engineers(f, unit)}${f / unit >= 0.95 && f / unit < 1.05 ? '' : ` at ${unit}`}</span>` : `<span class="warn-text">${f}, off the scale: split it</span>`}`
     : ''
 }
 
@@ -135,24 +137,24 @@ export function openShare(delivId, personId) {
   // Only offer what the person has: covering a gap by over-booking them is not a fix.
   if (da.gap > 0 && pa.free > 0) {
     const pts = sh.points + Math.min(da.gap, pa.free)
-    quick.push(`<button type="button" class="chip-btn" data-pct="${pctFor(pts, pa.cap)}">${pa.free >= da.gap ? 'Cover the gap' : 'Cover what they can'}: ${pts} pts</button>`)
+    quick.push(`<button type="button" class="chip-btn" data-pct="${pctForPoints(state.doc, cal, delivId, personId, pts)}">${pa.free >= da.gap ? 'Cover the gap' : 'Cover what they can'}: ${pts} pts</button>`)
   }
   if (freePct > 0.5 && pa.free !== da.gap) quick.push(`<button type="button" class="chip-btn" data-pct="${Math.round((sh.pct + freePct) * 100) / 100}">All their free time: ${fmtPct(sh.pct + freePct)}</button>`)
   const pop = open(`sp-${delivId}-${personId}`, `${head(`${who} on ${d.name.trim() || 'this deliverable'}`)}
-    <p class="pop-label">Share of ${escHtml(who)}'s time</p>
-    <div class="scale" role="group" aria-label="Percent of their capacity">${PCTS.map(v =>
+    <p class="pop-label">Share of ${escHtml(who)}'s ${pa.cap} pts</p>
+    <div class="scale" role="group" aria-label="Percent of their ${pa.cap} points">${PCTS.map(v =>
       `<button type="button" class="scale-btn" data-pct="${v}" aria-pressed="${Math.round(sh.pct) === v}">${v}%</button>`).join('')}</div>
     <div class="pop-row">
       <input class="field field--num" id="popPct" type="number" min="1" max="400" step="1" value="${Math.round(sh.pct)}" aria-label="Percent">
       <span>%</span>
       <button type="button" class="btn btn--secondary btn--sm" data-pct="exact">Set</button>
       <span class="pop-or">or</span>
-      <input class="field field--num" id="popPts" type="number" min="1" max="999" step="1" value="${sh.points}" aria-label="Exact points">
-      <span>pts</span>
+      <input class="field field--num" id="popPts" type="number" min="1" max="999" step="1" value="${sh.points}" aria-label="Points now, kept as a percentage">
+      <span>pts now</span>
       <button type="button" class="btn btn--secondary btn--sm" data-pct="points">Set</button>
     </div>
     ${quick.length ? `<div class="pop-row pop-row--wrap">${quick.join('')}</div>` : ''}
-    <p class="pop-note">${fmtPct(sh.pct)} of ${escHtml(who)}'s ${pa.cap} pts is <strong>${sh.points} pts</strong> here. Across everything: ${fmtPct(pa.pct)}${pa.free < 0 ? `, ${-pa.free} pts over` : `, ${pa.free} pts free`}. ${d.estimate ? `The deliverable needs ${d.estimate}, has ${da.got}.` : 'The deliverable is not sized yet.'}${sh.fixed ? ' This share is fixed points from an older plan; setting it makes it a percentage.' : ''}</p>
+    <p class="pop-note">${fmtPct(sh.pct)} of ${escHtml(who)}'s ${pa.cap} pts is <strong>${sh.points} pts</strong> here, and moves with their capacity. Across everything: ${fmtPct(pa.pct)}${pa.free < 0 ? `, ${-pa.free} pts over` : `, ${pa.free} pts free`}. ${d.estimate ? `The deliverable needs ${d.estimate}, has ${da.got}.` : 'The deliverable is not sized yet.'}${sh.fixed ? ' This share is fixed points from an older plan; setting it makes it a percentage.' : ''}</p>
     <button type="button" class="btn btn--ghost btn--sm btn--block" data-pct="remove">Take ${escHtml(who)} off</button>`,
   'Change the share')
   if (!pop) return
@@ -174,9 +176,9 @@ export function openShare(delivId, personId) {
       const pts = Math.round(Number(pop.querySelector('#popPts').value))
       if (!(pts >= 1)) { showToast('A share is at least 1 point'); return }
       if (!pa.cap) { showToast(`${who} has no capacity in this plan, so points cannot be split`); return }
-      v = pctFor(pts, pa.cap)
+      v = pctForPoints(state.doc, cal, delivId, personId, pts)
     } else v = Number(raw)
-    if (!(v >= 0.5)) { showToast('A share is at least 1%'); return }
+    if (!(v >= 1)) { showToast('A share is at least 1%'); return }
     closePop({ restore: false })
     if (!sh.fixed && Math.abs(v - sh.pct) < 0.005) return
     snapshot(); setShare(delivId, personId, v); afterChange()

@@ -8,10 +8,8 @@
 // value is a percent number (50 means 50%); each format decides how to show it.
 
 import { shareKey, ROUNDING } from './capacity.js'
-import { planRange, fmtDay } from './calendar.js'
-
-const STATUS = (d, da) =>
-  !d.estimate ? 'Unsized' : !d.members.length ? 'Nobody on it' : da.gap > 0 ? 'Short' : da.gap < 0 ? 'Over the estimate' : 'Staffed'
+import { planRange, fmtDay, lastWorkday } from './calendar.js'
+import { deliverableStatus, statusText } from './flags.js'
 
 const round1 = n => Math.round(n * 10) / 10
 const pctText = p => `${p < 10 && !Number.isInteger(p) ? round1(p) : Math.round(p)}%`
@@ -40,7 +38,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
   const people = new Map(doc.people.map(p => [p.id, p]))
   const nameOf = id => people.get(id)?.name.trim() || 'Unnamed'
   const byId = flagsById(flags)
-  const unit = a.unit || 1
+  const unit = a.bookable || a.unit || 1
 
   if (kind === 'deliverables') {
     return {
@@ -53,7 +51,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
         { key: 'engineers', label: 'Short (engineers)', type: 'num' },
         { key: 'status', label: 'Status', type: 'text' },
         { key: 'count', label: 'People', type: 'int' },
-        { key: 'split', label: 'Who, share of their time (pts)', type: 'text' },
+        { key: 'split', label: 'Who, share of their capacity (pts)', type: 'text' },
         { key: 'flags', label: 'Flags', type: 'text' },
       ],
       rows: doc.deliverables.map(d => {
@@ -64,7 +62,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
           booked: da.got,
           gap: da.gap > 0 ? da.gap : 0,
           engineers: da.gap > 0 ? round1(da.gap / unit) : 0,
-          status: STATUS(d, da),
+          status: statusText(deliverableStatus(d, da, a, doc)),
           count: d.members.length,
           split: d.members.map(m => {
             const sh = a.shares.get(shareKey(d.id, m.person))
@@ -93,7 +91,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
         { key: 'raw', label: 'Capacity before rounding (pts)', type: 'num' },
         { key: 'cap', label: 'Planned capacity (pts)', type: 'int' },
         { key: 'used', label: 'Booked (pts)', type: 'int' },
-        { key: 'pct', label: 'Booked (share of their time)', type: 'pct' },
+        { key: 'pct', label: 'Booked (of their capacity)', type: 'pct' },
         { key: 'free', label: 'Free (pts, negative is over)', type: 'int' },
         { key: 'split', label: 'Split across deliverables (pts)', type: 'text' },
         { key: 'flags', label: 'Flags', type: 'text' },
@@ -153,7 +151,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
         { key: 'person', label: 'Person', type: 'text' },
         { key: 'role', label: 'Role', type: 'text' },
         { key: 'country', label: 'Holidays from', type: 'text' },
-        { key: 'pct', label: 'Share of their time', type: 'pct' },
+        { key: 'pct', label: 'Share of their capacity', type: 'pct' },
         { key: 'points', label: 'Points', type: 'int' },
         { key: 'cap', label: 'Their planned capacity (pts)', type: 'int' },
       ],
@@ -194,7 +192,7 @@ export function settingsTable(doc, a, { countryName = c => c } = {}) {
   const rows = [
     ['Plan', doc.title],
     ['Starts', fmtDay(s.startDate, true)],
-    ['Ends', range ? fmtDay(range.last, true) : ''],
+    ['Ends', range ? fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true) : ''],
     ['Sprints', s.sprints],
     ['Weeks a sprint', s.weeksPerSprint],
     ['Working days a week', s.daysPerWeek],
@@ -207,9 +205,13 @@ export function settingsTable(doc, a, { countryName = c => c } = {}) {
     ['Rounding', ROUNDING[s.rounding]],
     ['Holiday countries', s.countries.map(countryName).join(', ') || 'None'],
     ['Default country', s.countries[0] ? countryName(s.countries[0]) : 'None'],
-    ['Team days off', (doc.daysOff || []).map(t => `${fmtDay(t.date, true)} ${t.label}`).join('; ') || 'None'],
+    ['Team days off', (doc.daysOff || []).map(t => `${fmtDay(t.date, true)} ${t.label}${t.country ? ` (${countryName(t.country)} only)` : ''}`).join('; ') || 'None'],
     ['One engineer before rounding (pts)', round1(a.unitRaw)],
     ['One engineer planned (pts)', a.unit],
+    ['Rounding factor applied to everyone', Math.round(a.k * 1000) / 1000],
+    ['One engineer bookable after the buffer (pts)', a.bookable],
+    ['Team points per sprint', a.perSprint.map((p, i) => `S${i + 1} ${p}`).join('; ')],
+    ['Public holidays marked as worked', (s.worked || []).map(w => `${w.country} ${fmtDay(w.date, true)}`).join('; ') || 'None'],
     ['Team capacity (pts)', a.capacity],
     ['Demand (pts)', a.demand],
     ['Booked (pts)', a.allocated],

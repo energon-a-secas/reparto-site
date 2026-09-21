@@ -9,7 +9,7 @@
 
 ## The model in one paragraph
 
-A story point is one focus day. A week has 5 working days; with the meeting day on, one goes to meetings, so 4 count. A 2-week sprint holds 8 points (a sprint cap can hold it lower, never higher). A plan is a number of sprints laid on real dates from a start day: 4 by default (two months of a quarter), 6 for the full quarter. One engineer's capacity is the points a sprint over the plan's sprints, minus public holidays for their country, team days off and their vacations, times their load, minus a buffer, then rounded onto the Fibonacci scale (nearest by default: 32 becomes 34, 27 becomes 21). A share is a percentage of one person's planned capacity on one deliverable, so its points follow that capacity; one person's shares are rounded together so they always add up.
+A story point is one focus day. A week has 5 working days; with the meeting day on, one goes to meetings, so 4 count. A 2-week sprint holds 8 points (a sprint cap can hold it lower, never higher). A plan is a number of sprints laid on real dates from a start day: 4 by default (two months of a quarter), 6 for the full quarter. One engineer's capacity is the points a sprint over the plan's sprints, minus public holidays for their country, team days off and their vacations, times their load. Only the full-time engineer is rounded onto the Fibonacci scale (nearest by default: 32 becomes 34); everyone else is scaled by that same factor, and the buffer comes off last. A share is a percentage of one person's planned capacity on one deliverable, so its points follow that capacity; one person's shares are rounded together so they always add up.
 
 ## A plan document (JSON)
 
@@ -23,7 +23,7 @@ A story point is one focus day. A week has 5 working days; with the meeting day 
     "weeksPerSprint": 2, "daysPerWeek": 5, "meetingDay": true, "pointsPerDay": 1,
     "sprintCap": 0, "sprints": 4, "buffer": 0, "rounding": "nearest"
   },
-  "daysOff": [{ "date": "2026-11-20", "label": "Offsite" }],
+  "daysOff": [{ "date": "2026-11-20", "label": "Offsite", "country": "" }],
   "people": [
     { "id": "ana", "name": "Ana Rojas", "role": "Backend", "load": 100, "sprintsOff": 0, "open": false,
       "country": "CL", "vacations": [{ "from": "2026-10-19", "to": "2026-10-23" }] }
@@ -36,15 +36,16 @@ A story point is one focus day. A week has 5 working days; with the meeting day 
 ```
 
 Rules that trip generated documents:
-- `estimate` is one of 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, or `null` for unsized. Anything else becomes `null`.
+- `estimate` is one of 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, or `null` for unsized. Anything else becomes `null`.
 - `countries` are ISO 3166 alpha-2 codes; the first is the default for anyone whose `country` is empty. Public holidays exist for 207 countries, 2025 to 2030.
 - `members[].pct` is a percent of that person's capacity (50 means half their plan). A member must name a person `id` from `people`; unknown ids are dropped. An older `{ "person", "points" }` member is kept as fixed points.
 - `sprintCap: 0` means "derive it from the focus days". `rounding` is `nearest`, `up`, `down` or `none`.
 - Dates are `YYYY-MM-DD`. A vacation's `from` and `to` are inclusive.
+- `daysOff[].country` scopes a team day off to one country's people ('' is everyone). `settings.worked: [{ "country": "US", "date": "2026-10-12" }]` counts a public holiday as a working day there.
 
 ## Deep link: open a plan in someone's browser
 
-`https://reparto.neorgon.com/#p=<base64url of the JSON>`. Base64url is standard base64 over the UTF-8 bytes with `+` -> `-`, `/` -> `_`, padding stripped. The fragment never reaches a server. The visitor's own plan stays one undo away.
+`https://reparto.neorgon.com/#p=<base64url of the JSON>`. Base64url is standard base64 over the UTF-8 bytes with `+` -> `-`, `/` -> `_`, padding stripped. The fragment never reaches a server. The visitor's own plan is kept under Plan > Restore a previous plan.
 
 - Python: `import base64, json; print("https://reparto.neorgon.com/#p=" + base64.urlsafe_b64encode(json.dumps(plan).encode()).decode().rstrip("="))`
 - Node: `'https://reparto.neorgon.com/#p=' + Buffer.from(JSON.stringify(plan), 'utf8').toString('base64url')`

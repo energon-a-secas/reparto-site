@@ -56,14 +56,23 @@ export function daysOffFor(person, doc, holidays) {
   if (!range) return off
   const country = person.country || s.countries?.[0] || ''
   if (country) {
+    // A holiday the team marked as worked in this country (settings.worked) costs nothing.
+    const worked = new Set((s.worked || []).filter(w => w.country === country).map(w => w.date))
     for (let y = range.from.getUTCFullYear(); y <= range.last.getUTCFullYear(); y++) {
-      for (const [date, name, local] of holidays(country, y) || []) off.set(date, { kind: 'holiday', label: local || name })
+      for (const [date, name, local] of holidays(country, y) || []) {
+        if (!worked.has(date)) off.set(date, { kind: 'holiday', label: local || name })
+      }
     }
   }
-  for (const t of doc.daysOff || []) if (!off.has(t.date)) off.set(t.date, { kind: 'team', label: t.label || 'Team day off' })
+  // A team day off scoped to a country only reaches the people who follow that country.
+  for (const t of doc.daysOff || []) {
+    if (t.country && t.country !== country) continue
+    if (!off.has(t.date)) off.set(t.date, { kind: 'team', label: t.label || 'Team day off' })
+  }
   for (const v of person.vacations || []) {
-    const a = parseISO(v.from), b = parseISO(v.to)
+    let a = parseISO(v.from), b = parseISO(v.to)
     if (!a || !b) continue
+    if (b < a) [a, b] = [b, a]
     for (let d = a; d <= b; d = addDays(d, 1)) if (!off.has(iso(d))) off.set(iso(d), { kind: 'vacation', label: 'Vacation' })
   }
   return off
@@ -93,6 +102,13 @@ export function personSprints(person, doc, holidays) {
     return { ...w, focus, points: s.sprintCap > 0 ? Math.min(s.sprintCap, raw) : raw }
   })
   return { sprints, lost }
+}
+
+/** The last working day of a window, for "5 to 16 Oct" and a plan's end date. */
+export function lastWorkday(w, daysPerWeek) {
+  let d = addDays(w.to, -1)
+  while (d > w.from && weekday(d) > daysPerWeek) d = addDays(d, -1)
+  return d
 }
 
 /** Working days a set of dates takes out of the plan (weekends and out-of-range days cost nothing). */

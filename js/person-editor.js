@@ -6,7 +6,7 @@
 // cannot disagree with the row.
 
 import { state, snapshot, person, deliverable, updatePerson, removePerson, assign, setShare, unassign } from './state.js'
-import { analyze, personCapacity, roundFib, shareKey } from './capacity.js'
+import { analyze, personCapacity, capFromRaw, shareKey, splitPoints } from './capacity.js'
 import { parseISO, addDays, iso, planRange, workdaysIn } from './calendar.js'
 import { cal, countryName, ensureHolidays } from './holidays.js'
 import { countryOptions } from './render-calendar.js'
@@ -48,7 +48,7 @@ function addDistRow(delivId, pct, initial = null) {
   const name = d.name.trim() || 'Untitled deliverable'
   $('distList').insertAdjacentHTML('beforeend', `<li class="dist-row" data-deliv="${delivId}" data-initial="${initial ?? ''}">
     <span class="dist-name" title="${escHtml(name)}">${escHtml(name)}</span>
-    <input type="number" class="field field--num" min="1" max="400" step="any" value="${Math.round(pct * 100) / 100}" aria-label="Percent of their time on ${escHtml(name)}">
+    <input type="number" class="field field--num" min="1" max="400" step="any" value="${Math.round(pct * 100) / 100}" aria-label="Percent of their capacity on ${escHtml(name)}">
     <span class="dist-unit">%</span>
     <span class="dist-pts"></span>
     <button type="button" class="icon-btn" data-dist-remove aria-label="Take them off ${escHtml(name)}">${X_ICON}</button>
@@ -173,17 +173,22 @@ function paintNote() {
   if (why.length) steps.push(`− ${a.base - pc.total} for ${why.join(', ')}`)
   if (pc.away) steps.push(`× ${s.sprints - pc.away} of ${s.sprints} sprints`)
   if (v.load < 100) steps.push(`× ${v.load}%`)
-  if (s.buffer) steps.push(`− ${s.buffer}% buffer`)
-  const cap = roundFib(pc.raw, s.rounding)
-  $('personCapNote').innerHTML = `${escHtml(steps.join(' '))} = <strong>${+pc.raw.toFixed(1)}</strong>, planned as <strong>${cap}</strong>.`
-  // The split, previewed against the capacity above (the page rounds the rows together on save).
+  // Same factor and buffer as the page (capFromRaw), so the preview is what Save stores.
+  const cap = capFromRaw(pc.raw, a)
+  const scaled = `scaled like a full-timer (${Math.round(a.unitRaw)} to ${a.unit})${s.buffer ? `, less the ${s.buffer}% buffer` : ''}`
+  $('personCapNote').innerHTML = `${escHtml(steps.join(' '))} = <strong>${+pc.raw.toFixed(1)}</strong> raw; ${escHtml(scaled)}: <strong>${cap}</strong> planned.`
+  const dup = v.sprintsOff > 0 && pc.lost.vacation > 0
+  $('personLeaveWarn').hidden = !dup
+  // The split, rounded together exactly as the page rounds it (largest remainder).
   const rows = distRows()
-  let total = 0
-  for (const r of rows) { total += r.pct; r.li.querySelector('.dist-pts').textContent = `≈ ${Math.round((cap * r.pct) / 100)} pts` }
-  const over = total - 100
+  const pts = splitPoints(cap, rows.map(r => r.pct))
+  rows.forEach((r, i) => { r.li.querySelector('.dist-pts').textContent = `${pts[i]} pts` })
+  const total = rows.reduce((t, r) => t + r.pct, 0)
+  const used = pts.reduce((t, x) => t + x, 0)
+  const partTime = v.load < 100 ? ` (${fmtPct((total * v.load) / 100)} of their week)` : ''
   $('distTotal').innerHTML = rows.length
-    ? `<span class="dist-meter" aria-hidden="true"><i style="width:${Math.min(100, total)}%"></i></span>
-       <span class="${over > 0.5 ? 'error-text' : ''}">${fmtPct(total)} of their time booked${over > 0.5 ? `: ${fmtPct(over)} over` : total < 99.5 ? `, ${fmtPct(100 - total)} free (≈ ${Math.round((cap * (100 - total)) / 100)} pts)` : ''}</span>`
+    ? `<span class="dist-meter${used > cap ? ' dist-meter--over' : ''}" aria-hidden="true"><i style="width:${Math.min(100, total)}%"></i></span>
+       <span class="${used > cap ? 'error-text' : ''}">${fmtPct(total)} of their ${cap} pts booked${partTime}${used > cap ? `: ${used - cap} pts over` : used < cap ? `, ${cap - used} pts free` : ''}</span>`
     : '<span class="dist-empty">Not on any deliverable yet. Add them to one, or drag them onto a card.</span>'
 }
 

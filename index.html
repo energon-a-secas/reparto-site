@@ -95,6 +95,7 @@
             <button type="button" role="menuitem" data-export="md">Download the report (Markdown)</button>
             <button type="button" role="menuitem" data-export="json">Download JSON</button>
             <button type="button" role="menuitem" data-action="import">Import a JSON plan…</button>
+            <button type="button" role="menuitem" data-action="previous" id="previousItem" hidden>Restore a previous plan…</button>
             <button type="button" role="menuitem" data-action="example">Load the example</button>
             <button type="button" role="menuitem" data-action="blank">Start a blank plan</button>
             <button type="button" role="menuitem" data-action="help">How the numbers work</button>
@@ -152,11 +153,20 @@
             <form class="day-add" id="dayOffForm" autocomplete="off">
               <input type="date" class="field field--date" name="date" aria-label="Team day off date" required>
               <input class="field" name="label" placeholder="Offsite, shutdown…" aria-label="Team day off reason" maxlength="60">
+              <select class="field field--who" name="country" aria-label="Who gets the day off"><option value="">Everyone</option></select>
               <button type="submit" class="btn btn--secondary btn--sm">Add team day off</button>
             </form>
           </div>
         </details>
       </section>
+
+      <div class="first-run" id="firstRun" role="note" hidden>
+        <p>This is an <strong>example team with problems planted on purpose</strong>. Fix a flag to see how it works, or start your own.</p>
+        <div class="first-run-actions">
+          <button type="button" class="btn btn--primary btn--sm" data-action="blank">Start my own plan</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-action="dismiss-intro">Got it</button>
+        </div>
+      </div>
 
       <section class="tiles" id="tiles" aria-label="Plan totals"></section>
 
@@ -175,7 +185,7 @@
             <input class="field" id="personRole" name="role" placeholder="Role" aria-label="New person's role" maxlength="80">
             <button type="submit" class="btn btn--secondary btn--sm">Add</button>
           </form>
-          <p class="panel-tip">Drag a person onto a deliverable. Or click them, then click the deliverable. Drop a share back here to remove it.</p>
+          <p class="panel-tip">Drag a person onto a deliverable, or click them and then the deliverable. Click the number on a share to set its percentage; the pencil on a row shows their whole split. Drop a share back here to remove it.</p>
         </aside>
 
         <section class="board" aria-labelledby="boardTitle">
@@ -220,6 +230,15 @@
       <form class="modal__body person-form" id="personEdit" autocomplete="off">
         <label class="lbl">Name <input class="field" name="name" maxlength="80"></label>
         <label class="lbl">Role <input class="field" name="role" maxlength="80"></label>
+        <fieldset class="dist">
+          <legend class="lbl">How their capacity is split</legend>
+          <ul class="dist-list" id="distList"></ul>
+          <div class="dist-total" id="distTotal"></div>
+          <div class="dist-actions">
+            <select class="field" id="distAdd" aria-label="Add them to a deliverable"></select>
+            <button type="button" class="btn btn--ghost btn--sm" data-dist="even">Split evenly</button>
+          </div>
+        </fieldset>
         <div class="form-row">
           <label class="lbl">Load on this team
             <select class="field" name="load">
@@ -240,17 +259,9 @@
           <ul class="vac-list" id="vacList"></ul>
           <button type="button" class="btn btn--ghost btn--sm" data-action="add-vacation">Add a vacation</button>
         </fieldset>
-        <fieldset class="dist">
-          <legend class="lbl">How their time is split</legend>
-          <ul class="dist-list" id="distList"></ul>
-          <div class="dist-total" id="distTotal"></div>
-          <div class="dist-actions">
-            <select class="field" id="distAdd" aria-label="Add them to a deliverable"></select>
-            <button type="button" class="btn btn--ghost btn--sm" data-dist="even">Split evenly</button>
-          </div>
-        </fieldset>
         <label class="check"><input type="checkbox" name="open"> Open role: counted in capacity, flagged until hired</label>
         <p class="form-note" id="personCapNote"></p>
+        <p class="form-note warn-text" id="personLeaveWarn" hidden>Both sprints away and vacation dates take time out. If they are the same leave, keep only one.</p>
       </form>
       <footer class="modal__footer">
         <button type="button" class="btn btn--ghost btn--sm btn--quiet-danger modal__left" data-action="remove-person">Remove from team</button>
@@ -285,6 +296,23 @@
     </div>
   </div>
 
+  <!-- Plans replaced by a share link, an import or a reset, kept in this browser -->
+  <div class="modal" id="previousModal" hidden>
+    <div class="modal__backdrop" data-modal-close tabindex="-1" aria-hidden="true"></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="previousTitle" tabindex="-1">
+      <header class="modal__header">
+        <h2 id="previousTitle">Restore a previous plan</h2>
+        <button type="button" class="btn btn--ghost btn--icon" data-modal-close aria-label="Close dialog">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <p class="form-note">The last plans a share link, an import or a new plan replaced, newest first. Restoring one keeps the current plan here too.</p>
+        <ul class="previous-list" id="previousList"></ul>
+      </div>
+    </div>
+  </div>
+
   <!-- How the numbers work -->
   <div class="modal" id="helpModal" hidden>
     <div class="modal__backdrop" data-modal-close tabindex="-1" aria-hidden="true"></div>
@@ -298,10 +326,10 @@
       <div class="modal__body help">
         <p><strong>A story point is one focus day.</strong> A week has five working days; with the meeting day on, one of them goes to ceremonies and does not count, so a week holds four points and a two-week sprint holds eight.</p>
         <p><strong>A plan is a number of sprints.</strong> A quarter holds six two-week sprints; when two months of it go to planned work, the plan is four. One engineer's plan is points a sprint times sprints: 8 × 4 = 32.</p>
-        <p><strong>Capacity lands on the Fibonacci scale</strong>, the same scale the work is sized on, so 32 becomes 34 and 48 becomes 55. Pick <em>Fibonacci below</em> for a safer plan, where 32 becomes 21. The raw number is always shown next to the rounded one.</p>
-        <p><strong>Load and sprints away</strong> scale one person: half-time on this team over four sprints is 16 raw, 13 planned. <strong>Buffer</strong> holds back a percentage of everyone's capacity for support and unplanned work.</p>
+        <p><strong>One full-time engineer lands on the Fibonacci scale</strong>, the same scale the work is sized on: 32 becomes 34, and 48 becomes 55. Everyone else is their own capacity scaled by that same factor, so a vacation day or a load step moves them a little instead of jumping them from 34 to 21. Pick <em>Fibonacci below</em> for a safer plan (32 becomes 21). The raw number is always shown next to the planned one.</p>
+        <p><strong>Load and sprints away</strong> scale one person: half-time on this team over four sprints is 16 raw, 17 planned. <strong>Buffer</strong> comes off after rounding and holds back a percentage of everyone's capacity for support and unplanned work: 10% of 34 leaves 31 bookable.</p>
         <p><strong>The calendar takes days out.</strong> Sprints start on the date you pick. Public holidays come from the country you choose for the team (anyone can have their own), team days off apply to everyone, and vacations belong to one person. A day off only costs a focus day when it lands on a working day, and a week someone spends entirely away costs no meeting day either.</p>
-        <p><strong>A share is a percentage of someone's time</strong>, and its points follow their capacity: 50% of an engineer planned at 34 is 17 points, and if a vacation brings them to 21 it becomes 10 without anyone touching it. A person can hold shares on as many deliverables as you like, and a deliverable can have as many people. Dropping someone on a card gives it what they have free, up to what it still needs. Click the number on a share to set a percentage (or exact points), or open the pencil on their row to see and edit their whole split at once.</p>
+        <p><strong>A share is a percentage of what someone has for this plan</strong>, after load, days off and buffer, and its points follow that capacity: 50% of an engineer planned at 34 is 17 points, and if a vacation brings them to 30 it becomes 15 without anyone touching it. A person can hold shares on as many deliverables as you like, and a deliverable can have as many people. Dropping someone on a card gives it what they have free, up to what it still needs; someone already fully booked still gets one sprint's worth, and the over-booking flag says so. Click the number on a share to set a percentage, or a number of points kept as the matching percentage; the pencil on their row shows and edits their whole split.</p>
         <h3>Keys</h3>
         <ul class="keys">
           <li><kbd>Enter</kbd> on a person or a share picks it up; <kbd>Enter</kbd> on a deliverable drops it there; <kbd>Esc</kbd> puts it back</li>

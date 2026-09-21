@@ -4,7 +4,7 @@
 //   data-drop="deliverable" data-deliv | data-drop="roster"   drop target
 
 import { state, ui } from './state.js'
-import { flagIndex, engineers } from './flags.js'
+import { flagIndex, deliverableStatus } from './flags.js'
 import { shareKey } from './capacity.js'
 import { $, escHtml, initials, faceColor, plural, fmtPct } from './utils.js'
 
@@ -58,7 +58,7 @@ export function renderRoster(a, flags) {
         <span class="person-role">${p.open ? '<span class="tag">open role</span>' : ''}${bits || (p.open ? '' : '&nbsp;')}</span>
       </span>
       <span class="person-cap" title="${fmtPct(pa.pct)} of their time booked: ${pa.used} of ${pa.cap} pts (${fmt(pa.raw)} before rounding${pa.lost.holiday + pa.lost.team + pa.lost.vacation ? `, after ${pa.lost.holiday + pa.lost.team + pa.lost.vacation} days off` : ''})">
-        <b>${Math.abs(pa.free)}</b><small>${pa.free < 0 ? 'over' : 'free'} · ${fmtPct(pa.pct)} of ${pa.cap}</small>
+        <b>${Math.abs(pa.free)}</b><small>${pa.free < 0 ? 'over' : 'free'} of ${pa.cap}</small>
       </span>
       <button type="button" class="icon-btn" data-action="edit-person" data-id="${p.id}" data-key="pe-${p.id}" aria-label="Edit ${escHtml(nameOf(p))}">${EDIT_ICON}</button>
       <span class="cap-bar" aria-hidden="true"><i style="width:${pct}%"></i></span>
@@ -69,14 +69,6 @@ export function renderRoster(a, flags) {
 const fmt = n => (Number.isInteger(n) ? String(n) : n.toFixed(1))
 
 // ── Board ────────────────────────────────────────────────────
-function status(d, da, a) {
-  if (!d.estimate) return { cls: 'unsized', icon: '?', text: da.got ? `Unsized · ${da.got} pts booked` : 'Unsized: pick a Fibonacci size' }
-  if (!d.members.length) return { cls: 'empty', icon: '!', text: `Nobody on it · needs ${d.estimate}` }
-  if (da.gap > 0) return { cls: 'short', icon: '!', text: `Short ${da.gap} · ${engineers(da.gap, a.unit)}` }
-  if (da.gap < 0) return { cls: 'over', icon: '↑', text: `${-da.gap} over the estimate` }
-  return { cls: 'ok', icon: '✓', text: 'Staffed' }
-}
-
 function meter(d, da) {
   if (!d.estimate) return '<div class="deliv-meter deliv-meter--unsized" aria-hidden="true"></div>'
   const top = Math.max(d.estimate, da.got)
@@ -97,6 +89,7 @@ function share(d, m, a) {
     ${face(p, true)}
     <span class="share-name">${escHtml(nameOf(p))}</span>
     <button type="button" class="share-pts" data-action="points" data-id="${d.id}" data-person="${p.id}" data-key="sp-${d.id}-${p.id}"
+      title="Change ${escHtml(nameOf(p))}'s share: ${fmtPct(sh.pct)} of their ${pa.cap} pts"
       aria-label="${escHtml(nameOf(p))}: ${fmtPct(sh.pct)}, ${sh.points} points. Change">${sh.points}<span class="share-pct">${fmtPct(sh.pct)}</span></button>
     <button type="button" class="share-x" data-action="unassign" data-id="${d.id}" data-person="${p.id}" aria-label="Take ${escHtml(nameOf(p))} off">${X_ICON}</button>
   </li>`
@@ -114,11 +107,16 @@ export function renderBoard(a, flags) {
 
   const cards = state.doc.deliverables.map(d => {
     const da = a.deliverables.get(d.id)
-    const st = status(d, da, a)
+    const st = deliverableStatus(d, da, a, state.doc)
     const name = d.name.trim() || 'Untitled deliverable'
     const holds = carry && d.members.some(m => m.person === carry.id)
+    // Cards that need someone stand out while carrying; staffed ones stay reachable but quiet.
+    const needed = !d.members.length || da.gap > 0
+    const staffed = d.estimate && da.gap <= 0
+    const verb = ui.carry?.from ? `Move ${escHtml(nameOf(carry))}'s share` : `Add ${escHtml(nameOf(carry))}`
     const dropBtn = carry && ui.carry.from !== d.id && !(holds && !ui.carry.from)
-      ? `<button type="button" class="drop-btn" data-action="drop" data-id="${d.id}" aria-label="${ui.carry.from ? `Move ${escHtml(nameOf(carry))}'s share to` : `Add ${escHtml(nameOf(carry))} to`} ${escHtml(name)}">${ui.carry.from ? 'Move' : 'Add'} ${escHtml(nameOf(carry))} here</button>` : ''
+      ? `<button type="button" class="drop-btn${needed ? ' drop-btn--needed' : staffed ? ' drop-btn--muted' : ''}" data-action="drop" data-id="${d.id}"
+          aria-label="${verb} to ${escHtml(name)}${staffed ? ', already staffed' : ''}">${verb} here${staffed ? ' (already staffed)' : ''}</button>` : ''
     return `<article class="deliv deliv--${st.cls}${focused(d.id) ? ' is-focus' : ''}${carry ? ' is-target' : ''}" id="d-${d.id}"
         data-drop="deliverable" data-deliv="${d.id}" aria-label="${escHtml(name)}">
       <header class="deliv-head">

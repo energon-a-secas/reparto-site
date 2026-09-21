@@ -3,9 +3,9 @@
 // region from the document. The regions are cheap to rebuild, so there is no
 // diffing; the focused control is found again by its data-key.
 
-import { state, ui, saveState, canUndo, canRedo } from './state.js'
+import { state, ui, saveState, canUndo, canRedo, previousPlans } from './state.js'
 import { analyze, horizons, ROUNDING } from './capacity.js'
-import { computeFlags, engineers } from './flags.js'
+import { computeFlags, missingPeople, engineers } from './flags.js'
 import { renderRoster, renderBoard } from './render-board.js'
 import { renderFlags } from './render-flags.js'
 import { renderCalendar } from './render-calendar.js'
@@ -33,6 +33,8 @@ export function renderAll() {
 }
 
 function renderChrome() {
+  $('firstRun').hidden = !ui.firstRun
+  $('previousItem').hidden = !previousPlans().length
   $('undoBtn').disabled = !canUndo()
   $('redoBtn').disabled = !canRedo()
   const t = $('planTitle')
@@ -43,8 +45,12 @@ function renderChrome() {
 }
 
 // ── The formula is the settings panel ────────────────────────
-const opts = (list, cur, fmt = v => v) =>
-  list.map(v => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${escHtml(fmt(v))}</option>`).join('')
+/** Options for a formula select. A value the list does not offer (an import, a share link) is added in order, so the select shows what the maths uses. */
+function opts(list, cur, fmt = v => v) {
+  const all = list.some(v => String(v) === String(cur)) || cur === undefined || cur === '' ? list
+    : [...list, cur].sort((x, y) => (typeof x === 'number' && typeof y === 'number' ? x - y : 0))
+  return all.map(v => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${escHtml(fmt(v))}</option>`).join('')
+}
 
 const range = (lo, hi) => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i)
 
@@ -60,9 +66,9 @@ function renderCalc(a) {
   const presets = horizons(s).map(h =>
     `<button type="button" class="chip-btn" data-action="horizon" data-sprints="${h.sprints}" data-key="h-${h.key}" aria-pressed="${s.sprints === h.sprints}">${h.label} · ${h.sprints}</button>`
   ).join('')
-  const capList = [0, 3, 5, 8, 13, 21]
+  const capList = [0, ...range(1, Math.max(1, Math.floor(a.derived)))]
   const delta = Math.round(a.unit - a.unitRaw)
-  const rounded = delta !== 0
+  const drift = a.unitRaw ? Math.round((a.unit / a.unitRaw - 1) * 100) : 0
 
   const parts = [
     term({ value: sel('weeksPerSprint', [1, 2, 3, 4], s.weeksPerSprint, 'Weeks per sprint'), label: s.weeksPerSprint === 1 ? 'week a sprint' : 'weeks a sprint' }),
@@ -87,8 +93,6 @@ function renderCalc(a) {
     op('−'),
     term({ value: `<span class="term-num">${fmt(a.offPts)}</span>`, label: `pts for ${plural(a.offDays, 'day')} off`,
       sub: `<span class="term-note">${s.countries.length ? `${escHtml(countryName(s.countries[0]))} holidays` : 'no holidays'}, team days</span>` }),
-    op('−'),
-    term({ value: sel('buffer', [0, 10, 15, 20, 25, 30], s.buffer, 'Buffer held back', v => `${v}%`), label: 'buffer' }),
     op('='),
     term({ value: `<span class="term-num">${fmt(a.unitRaw)}</span>`, label: 'raw pts' }),
     op('→'),
@@ -96,16 +100,20 @@ function renderCalc(a) {
       value: `<span class="term-num">${a.unit}</span>`,
       label: 'planned per engineer',
       sub: sel('rounding', Object.keys(ROUNDING), s.rounding, 'Rounding', v => ROUNDING[v]),
-      cls: 'term--final',
+      cls: a.held ? '' : 'term--final',
     }),
+    // The buffer comes off after rounding, so 10% of 34 is 31 bookable, not "still 34".
+    op('−'),
+    term({ value: sel('buffer', [0, 10, 15, 20, 25, 30], s.buffer, 'Buffer held back', v => `${v}%`), label: 'buffer' }),
+    ...(a.held ? [op('='), term({ value: `<span class="term-num">${a.bookable}</span>`, label: 'bookable per engineer', cls: 'term--final' })] : []),
   ]
   // An operator travels with the term after it, so a wrapped line never ends on "×".
   let html = parts[0]
   for (let i = 1; i < parts.length; i += 2) html += `<span class="chain-pair">${parts[i]}${parts[i + 1]}</span>`
   $('calcChain').innerHTML = html
 
-  $('calcLead').innerHTML = rounded
-    ? `Change any term and every share, card and flag below follows. Rounding ${delta > 0 ? 'adds' : 'takes'} <strong>${Math.abs(delta)}</strong> per full-time engineer.`
+  $('calcLead').innerHTML = delta
+    ? `Change any term and every share, card and flag below follows. Rounding ${delta > 0 ? 'adds' : 'takes'} <strong>${Math.abs(delta)}</strong> ${delta > 0 ? 'to' : 'from'} a full-time engineer and scales everyone else by the same ${Math.abs(drift)}%.`
     : 'Change any term and every share, card and flag below follows.'
 }
 
@@ -123,11 +131,21 @@ function tile({ label, value, unit = 'pts', sub, status = '', meter = null }) {
   </div>`
 }
 
+/** The hiring gap, and what explains it: open roles, unstaffed work, over-booked people. */
+function missingTile(mp, bookable) {
+  const lines = []
+  if (mp.points) lines.push(engineers(mp.points, bookable))
+  if (mp.points && mp.onOpen) lines.push(`${mp.onOpen} covered by open roles${mp.points > mp.onOpen ? `, ${mp.points - mp.onOpen} beyond them` : ''}`)
+  if (mp.unstaffed) lines.push(`${mp.unstaffed} unstaffed on ${plural(mp.unstaffedOn, 'deliverable')}${mp.freeHired.length ? `: ${mp.freeHired.map(x => `${escHtml(x.name)} ${x.free}`).join(', ')} free` : ''}`)
+  if (mp.overPeople.length) lines.push(`<span class="error-text">${mp.overPeople.map(x => `${escHtml(x.name)} ${x.over} over`).join(', ')}</span>`)
+  const sub = lines.join(' · ') || (mp.status === 'ok' ? 'Every sized deliverable is staffed' : 'Nothing sized to staff yet')
+  return tile({ label: 'Missing people', value: mp.points, unit: 'pts short', sub, status: mp.status === 'none' ? '' : mp.status })
+}
+
 function renderTiles(a) {
   const d = state.doc
   const openN = d.people.filter(p => p.open).length
   const pct = a.capacity ? (a.allocated / a.capacity) * 100 : 0
-  const shortOn = [...a.deliverables.values()].filter(x => x.gap > 0).length
   const teamShort = Math.max(0, a.demand - a.capacity)
   $('tiles').innerHTML = [
     tile({
@@ -144,14 +162,6 @@ function renderTiles(a) {
       sub: `${Math.round(pct)}% of capacity · ${a.free} free${a.over ? ` · <span class="error-text">${a.over} over-booked</span>` : ''}`,
       meter: pct,
     }),
-    a.shortfall
-      ? tile({
-          label: 'Missing people', value: a.shortfall, unit: 'pts short',
-          sub: `on ${plural(shortOn, 'deliverable')}: ${engineers(a.shortfall, a.unit)}`,
-          status: 'error',
-        })
-      : d.deliverables.some(x => x.estimate)
-        ? tile({ label: 'Missing people', value: 0, unit: 'pts short', sub: 'Every sized deliverable is staffed', status: 'ok' })
-        : tile({ label: 'Missing people', value: 0, unit: 'pts short', sub: 'Nothing sized to staff yet' }),
+    missingTile(missingPeople(d, a), a.bookable),
   ].join('')
 }

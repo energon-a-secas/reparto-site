@@ -4,7 +4,7 @@
 // it is real, it just costs nobody a focus day.
 
 import { state } from './state.js'
-import { sprintWindows, planRange, daysOffFor, parseISO, addDays, fmtDay } from './calendar.js'
+import { sprintWindows, planRange, daysOffFor, parseISO, fmtDay, lastWorkday } from './calendar.js'
 import { countries, countryName, MAIN } from './holidays.js'
 import { $, escHtml, plural } from './utils.js'
 
@@ -53,13 +53,6 @@ function renderCountryPicks(s) {
   }
 }
 
-/** The last working day of a sprint window, for "5 to 16 Oct". */
-function lastWorkday(w, daysPerWeek) {
-  let d = addDays(w.to, -1)
-  while (d > w.from && (d.getUTCDay() || 7) > daysPerWeek) d = addDays(d, -1)
-  return d
-}
-
 export function renderCalendar(a, cal) {
   const s = state.doc.settings
   const range = planRange(s)
@@ -68,28 +61,47 @@ export function renderCalendar(a, cal) {
   const multi = s.countries.length > 1
   const inRange = d => range && d >= range.from && d < range.to
   const workday = d => (d.getUTCDay() || 7) <= s.daysPerWeek
-  // Each country's holidays inside the plan: they cost the people who follow that country.
+  const worked = new Set((s.worked || []).map(w => `${w.country}|${w.date}`))
+  // Each country's public holidays inside the plan, worked or not: they cost the people who follow that country.
   const perCountry = s.countries.map(code => {
-    const off = daysOffFor({ country: code, vacations: [] }, { ...state.doc, daysOff: [] }, cal.holidays)
-    const days = [...off.entries()].map(([date, o]) => ({ date, ...o, d: parseISO(date) })).filter(x => inRange(x.d))
-    return { code, costs: days.filter(x => workday(x.d)), weekend: days.filter(x => !workday(x.d)), loading: cal.status(code) === 'loading' }
+    const days = []
+    if (range) {
+      for (let y = range.from.getUTCFullYear(); y <= range.last.getUTCFullYear(); y++) {
+        for (const [date, name, local] of cal.holidays(code, y) || []) {
+          const d = parseISO(date)
+          if (d && inRange(d)) days.push({ date, d, label: local || name, worked: worked.has(`${code}|${date}`) })
+        }
+      }
+    }
+    return { code, costs: days.filter(x => workday(x.d) && !x.worked), worked: days.filter(x => x.worked), weekend: days.filter(x => !workday(x.d)), loading: cal.status(code) === 'loading' }
   })
   const teamDays = state.doc.daysOff.map(t => ({ ...t, d: parseISO(t.date) }))
   const teamCosts = teamDays.filter(t => inRange(t.d) && workday(t.d))
   const loading = perCountry.some(c => c.loading)
+  const who = t => (t.country ? `<span class="day-cc">${t.country}</span>` : '')
 
-  const chips = perCountry.flatMap(c => c.costs.map(x =>
-    `<li class="day-chip day-chip--holiday">${multi ? `<span class="day-cc">${c.code}</span>` : ''}<span class="day-date">${fmtDay(x.d)}</span> ${escHtml(x.label)}</li>`)).join('')
-    + teamCosts.map(t => `<li class="day-chip day-chip--team"><span class="day-date">${fmtDay(t.d)}</span> ${escHtml(t.label || 'Team day off')}
-        <button type="button" class="day-x" data-action="remove-day-off" data-date="${t.date}" aria-label="Remove ${fmtDay(t.d)} as a team day off">${X_ICON}</button></li>`).join('')
+  const chips = perCountry.flatMap(c => [
+    ...c.costs.map(x => `<li class="day-chip day-chip--holiday">${multi ? `<span class="day-cc">${c.code}</span>` : ''}<span class="day-date">${fmtDay(x.d)}</span> ${escHtml(x.label)}
+      <button type="button" class="day-x" data-action="work-holiday" data-code="${c.code}" data-date="${x.date}" aria-label="Count ${fmtDay(x.d)} as a working day in ${escHtml(countryName(c.code))}" title="The team works this day">${X_ICON}</button></li>`),
+    ...c.worked.map(x => `<li class="day-chip day-chip--muted" title="Marked as a working day"><span class="day-cc">${c.code}</span><span class="day-date">${fmtDay(x.d)}</span> <s>${escHtml(x.label)}</s> worked
+      <button type="button" class="day-restore" data-action="unwork-holiday" data-code="${c.code}" data-date="${x.date}" aria-label="Count ${fmtDay(x.d)} as a holiday in ${escHtml(countryName(c.code))} again">Restore</button></li>`),
+  ]).join('')
+    + teamCosts.map(t => `<li class="day-chip day-chip--team">${who(t)}<span class="day-date">${fmtDay(t.d)}</span> ${escHtml(t.label || 'Team day off')}
+        <button type="button" class="day-x" data-action="remove-day-off" data-date="${t.date}" data-code="${t.country || ''}" aria-label="Remove ${fmtDay(t.d)} as a team day off">${X_ICON}</button></li>`).join('')
   // Team days outside the plan or on a weekend still exist and can still be removed.
   const outside = teamDays.filter(t => !teamCosts.includes(t)).map(t =>
-    `<li class="day-chip day-chip--muted" title="Outside the plan or on a weekend, so it costs nothing"><span class="day-date">${fmtDay(t.date, true)}</span> ${escHtml(t.label || 'Team day off')}
-      <button type="button" class="day-x" data-action="remove-day-off" data-date="${t.date}" aria-label="Remove ${fmtDay(t.date)}">${X_ICON}</button></li>`).join('')
+    `<li class="day-chip day-chip--muted" title="Outside the plan or on a weekend, so it costs nothing">${who(t)}<span class="day-date">${fmtDay(t.date, true)}</span> ${escHtml(t.label || 'Team day off')}
+      <button type="button" class="day-x" data-action="remove-day-off" data-date="${t.date}" data-code="${t.country || ''}" aria-label="Remove ${fmtDay(t.date)}">${X_ICON}</button></li>`).join('')
   const weekendN = perCountry.reduce((n, c) => n + c.weekend.length, 0)
 
-  const sprintList = windows.map(w =>
-    `<li><span class="sprint-n">S${w.i + 1}</span> ${fmtDay(w.from)} to ${fmtDay(lastWorkday(w, s.daysPerWeek))}</li>`).join('')
+  // Team points in each sprint: a sprint far below the others (holidays, vacations) is where a plan slips.
+  const sorted = [...a.perSprint].sort((x, y) => x - y)
+  const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0
+  const sprintList = windows.map(w => {
+    const pts = a.perSprint[w.i] ?? 0
+    const low = state.doc.people.length && median && pts < median * 0.75
+    return `<li class="${low ? 'sprint--low' : ''}" title="${low ? 'Well below the other sprints: holidays or vacations cluster here' : ''}"><span class="sprint-n">S${w.i + 1}</span> ${fmtDay(w.from)} to ${fmtDay(lastWorkday(w, s.daysPerWeek))}${state.doc.people.length ? ` <span class="sprint-pts">· ${pts} pts</span>` : ''}</li>`
+  }).join('')
 
   // Controls: set values only when the visitor is not in them.
   const sd = $('startDate')
@@ -107,6 +119,13 @@ export function renderCalendar(a, cal) {
        weekendN ? `${weekendN} more on a weekend` : ''].filter(Boolean).join(' · ')
   $('dayChips').innerHTML = chips + outside
   $('dayOffForm').elements.date.min = s.startDate
+  const whoSel = $('dayOffForm').elements.country
+  const whoKey = s.countries.join(',')
+  if (whoSel.dataset.list !== whoKey) {
+    whoSel.innerHTML = `<option value="">Everyone</option>` + s.countries.map(c => `<option value="${c}">${escHtml(countryName(c))} only</option>`).join('')
+    whoSel.dataset.list = whoKey
+  }
+  whoSel.hidden = s.countries.length < 2
   // The folded line: enough to trust the numbers without opening the panel.
   const vacations = [...a.people.values()].reduce((n, p) => n + p.lost.vacation, 0)
   $('calSummary').textContent = [

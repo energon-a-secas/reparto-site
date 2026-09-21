@@ -32,6 +32,7 @@ The model is pure and Node-tested; the view is ES modules over one `state.doc`.
 | `js/actions.js` | `dropPerson` (shared by drag, carry and fixes), `defaultShare`, flag fixes, `show()` |
 | `js/popover.js`, `js/person-editor.js` | estimate picker and share editor; the person modal with country and vacations |
 | `js/events.js`, `js/io.js`, `js/modal.js`, `js/seed.js`, `js/utils.js` | wiring, share link / Markdown report / JSON, dialogs, the example plan, helpers |
+| `js/report.js` | the Markdown report, pure (as-of date, formula steps, named holidays, per-sprint points, the On column) |
 | `js/tables.js`, `js/formats.js`, `js/xlsx.js`, `js/export-dialog.js` | the plan as `{ name, columns, rows }` tables; CSV / TSV / Markdown; a library-free .xlsx (SpreadsheetML in a stored zip); the Export dialog. Pure except the dialog, tested in `test/tables.test.mjs` |
 
 Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,footer,beacon}.js`, `css/neorgon-*.css`.
@@ -39,7 +40,8 @@ Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,f
 ## Data
 
 - `localStorage['reparto-v1']` holds `{ v, doc, savedAt }`. `doc` is `{ title, settings, daysOff, people, deliverables }`; a share is `deliverables[].members[] = { person, points }`.
-- `settings.countries` is the team's list of ISO codes, the default first; `people[].country` overrides it per person. A plan saved with the older single `settings.country` migrates in `normalizeDoc`.
+- `settings.countries` is the team's list of ISO codes, the default first; `people[].country` overrides it per person. A plan saved with the older single `settings.country` migrates in `normalizeDoc`. `settings.worked` lists `{ country, date }` holidays a team works anyway; `daysOff[].country` scopes a team day off to one country ('' is everyone).
+- `localStorage['reparto-v1-previous']` keeps the last five plans a share link, an import or a new plan replaced (`resetTo()` pushes them), offered under Plan > Restore a previous plan.
 - A share link is `#p=` + base64url(JSON of `doc`). The fragment never reaches a server; `loadFromHash()` swaps it in through `resetTo()`, so the visitor's own plan is one undo away, then clears the hash.
 - `data/holidays/<CC>.json` is `{ country, name, source, years: { 2026: [[iso, englishName, localName?], ...] } }`, public nationwide holidays only, 2025 to 2030. `index.json` lists the countries.
 
@@ -52,7 +54,9 @@ Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,f
 - **Touch drags on a long press.** Rows and chips are `touch-action: pan-y` so a swipe scrolls the page; `dnd.js` starts a touch drag after 250ms still, then cancels `touchmove` (a non-passive listener) so the page holds. `touch-action: none` made the roster a dead zone for scrolling.
 - **CSV text cells that start with `=`, `+`, `-` or `@` get a leading apostrophe.** Excel and Sheets run them as formulas when a CSV is opened, and names come from whoever typed them. The .xlsx writes inline strings, which are never evaluated, so it needs no guard.
 - **The .xlsx is a stored (uncompressed) zip with fixed 1980 timestamps**, so the same plan gives the same bytes. `python3 -c "import zipfile; print(zipfile.ZipFile('plan.xlsx').testzip())"` checks every CRC; openpyxl in a scratch `--target` dir reads it back.
-- **Rounding is per person and the jumps are big.** Nearest Fibonacci turns 27 into 21 and 28 into 34, so one vacation week can drop someone 13 points. That is the model the brief asked for (32 -> 34); raw and planned are always shown side by side. Tests pin the boundary.
+- **Only the full-time engineer is rounded; everyone else is scaled.** `analyze()` rounds the default-country full-timer onto Fibonacci (31 -> 34), takes `k = unit / unitRaw`, and gives each person `round(raw x k x keep)` (`capFromRaw`), with the buffer (`keep`) applied after rounding. Rounding each person separately made cliffs (a 4th vacation day cost 13 points, 60/75/80% load all planned at 21, a 10% buffer held back nothing), found by all five reviewers on 2026-09-21. Side effect: a one-day change in the default country's calendar often leaves every planned number alone, because the full-timer still rounds to 34 and everyone scales from them; raw shows the change. `test/review.test.mjs` pins the no-cliff numbers.
+- **Every fix lands exactly.** Largest-remainder rounding can land `points / cap` one point off, so fixes and the share popover go through `pctForPoints()` (tries a few nudges on a clone and checks), and trim goes through the pure `trimShares()`. A fix that raises a new flag is a bug.
+- **One status per deliverable.** `deliverableStatus()` in flags.js feeds the cards, the Markdown report and the tables, and "At risk" (an over-booked or open-role member) beats a green "Staffed". The over-booking flag carries `target.also`, the cards that person is on, so their badges count it.
 - **The sprint cap is a ceiling** (`min(cap, focus days x points)`), not an override: a cap above what the focus days give changes nothing, and a flag says so.
 - **A fully away week costs no meeting day.** The meeting day comes out of each week that still has a working day; a day off on a weekend costs nothing.
 - **The example plan moves with the calendar.** It starts on next quarter's first Monday, so its totals change each quarter. Tests use fixed dates; do not assert against the example's numbers.
