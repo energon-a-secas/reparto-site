@@ -5,7 +5,8 @@
 
 import { state, ui } from './state.js'
 import { flagIndex, engineers } from './flags.js'
-import { $, escHtml, initials, faceColor, plural } from './utils.js'
+import { shareKey } from './capacity.js'
+import { $, escHtml, initials, faceColor, plural, fmtPct } from './utils.js'
 
 const X_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>'
 const EDIT_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>'
@@ -50,14 +51,14 @@ export function renderRoster(a, flags) {
     const carried = ui.carry?.person === p.id && !ui.carry.from
     return `<li class="person person--${band}${p.open ? ' person--open' : ''}${carried ? ' is-carried' : ''}${focused(p.id) ? ' is-focus' : ''}"
         id="p-${p.id}" data-drag="person" data-person="${p.id}" data-key="p-${p.id}" tabindex="0"
-        aria-label="${escHtml(nameOf(p))}${p.open ? ', open role' : ''}. ${pa.used} of ${pa.cap} points booked. Enter to pick up.">
+        aria-label="${escHtml(nameOf(p))}${p.open ? ', open role' : ''}. ${fmtPct(pa.pct)} booked, ${pa.used} of ${pa.cap} points. Enter to pick up.">
       ${face(p)}
       <span class="person-meta">
         <span class="person-line"><span class="person-name">${escHtml(nameOf(p))}</span>${badge(idx.get(p.id))}</span>
         <span class="person-role">${p.open ? '<span class="tag">open role</span>' : ''}${bits || (p.open ? '' : '&nbsp;')}</span>
       </span>
-      <span class="person-cap" title="${pa.used} booked of ${pa.cap} (${fmt(pa.raw)} before rounding${pa.lost.holiday + pa.lost.team + pa.lost.vacation ? `, after ${pa.lost.holiday + pa.lost.team + pa.lost.vacation} days off` : ''})">
-        <b>${Math.abs(pa.free)}</b><small>${pa.free < 0 ? `over, cap ${pa.cap}` : `free of ${pa.cap}`}</small>
+      <span class="person-cap" title="${fmtPct(pa.pct)} of their time booked: ${pa.used} of ${pa.cap} pts (${fmt(pa.raw)} before rounding${pa.lost.holiday + pa.lost.team + pa.lost.vacation ? `, after ${pa.lost.holiday + pa.lost.team + pa.lost.vacation} days off` : ''})">
+        <b>${Math.abs(pa.free)}</b><small>${pa.free < 0 ? 'over' : 'free'} · ${fmtPct(pa.pct)} of ${pa.cap}</small>
       </span>
       <button type="button" class="icon-btn" data-action="edit-person" data-id="${p.id}" data-key="pe-${p.id}" aria-label="Edit ${escHtml(nameOf(p))}">${EDIT_ICON}</button>
       <span class="cap-bar" aria-hidden="true"><i style="width:${pct}%"></i></span>
@@ -88,14 +89,15 @@ function share(d, m, a) {
   const p = state.doc.people.find(x => x.id === m.person)
   if (!p) return ''
   const pa = a.people.get(p.id)
+  const sh = a.shares.get(shareKey(d.id, p.id))
   const carried = ui.carry?.person === p.id && ui.carry.from === d.id
   return `<li class="share${p.open ? ' share--open' : ''}${pa.free < 0 ? ' share--over' : ''}${carried ? ' is-carried' : ''}"
       data-drag="person" data-person="${p.id}" data-from="${d.id}" data-key="s-${d.id}-${p.id}" tabindex="0"
-      aria-label="${escHtml(nameOf(p))} gives ${m.points} points. Enter to pick up and move.">
+      aria-label="${escHtml(nameOf(p))} gives ${fmtPct(sh.pct)} of their time, ${sh.points} points. Enter to pick up and move.">
     ${face(p, true)}
     <span class="share-name">${escHtml(nameOf(p))}</span>
     <button type="button" class="share-pts" data-action="points" data-id="${d.id}" data-person="${p.id}" data-key="sp-${d.id}-${p.id}"
-      aria-label="${escHtml(nameOf(p))}: ${m.points} points. Change">${m.points}</button>
+      aria-label="${escHtml(nameOf(p))}: ${fmtPct(sh.pct)}, ${sh.points} points. Change">${sh.points}<span class="share-pct">${fmtPct(sh.pct)}</span></button>
     <button type="button" class="share-x" data-action="unassign" data-id="${d.id}" data-person="${p.id}" aria-label="Take ${escHtml(nameOf(p))} off">${X_ICON}</button>
   </li>`
 }

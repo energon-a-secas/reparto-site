@@ -14,7 +14,7 @@ import { examplePlan, blankPlan } from './seed.js'
 import { afterChange, renderAll } from './render.js'
 import { bindDnd, justDragged } from './dnd.js'
 import { pickUp, putDown, cancelCarry, applyFix, show } from './actions.js'
-import { openEstimate, openPoints, closePop, popAnchor, repositionPop } from './popover.js'
+import { openEstimate, openShare, closePop, popAnchor, repositionPop } from './popover.js'
 import { openModal, modalKeydown, modalClick } from './modal.js'
 import { runExport, importFile } from './io.js'
 import { $, showToast } from './utils.js'
@@ -123,7 +123,7 @@ function runAction(action, el = null) {
       break
     }
     case 'estimate': togglePop(`de-${id}`, () => openEstimate(id)); break
-    case 'points': togglePop(`sp-${id}-${el.dataset.person}`, () => openPoints(id, el.dataset.person)); break
+    case 'points': togglePop(`sp-${id}-${el.dataset.person}`, () => openShare(id, el.dataset.person)); break
     case 'unassign': {
       const p = person(el.dataset.person), d = deliverable(id)
       snapshot(); unassign(id, el.dataset.person); afterChange()

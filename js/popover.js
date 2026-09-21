@@ -2,11 +2,11 @@
 // One element (#pop), anchored under the control that opened it. The anchor
 // is remembered by data-key, not by node, because every change re-renders.
 
-import { state, snapshot, deliverable, person, updateDeliverable, setPoints, unassign } from './state.js'
-import { SCALE, fibCeil, analyze } from './capacity.js'
+import { state, snapshot, deliverable, person, updateDeliverable, setShare, unassign } from './state.js'
+import { SCALE, fibCeil, analyze, pctFor, shareKey } from './capacity.js'
 import { cal } from './holidays.js'
 import { afterChange } from './render.js'
-import { $, escHtml, showToast } from './utils.js'
+import { $, escHtml, showToast, fmtPct } from './utils.js'
 
 let anchorKey = null
 
@@ -118,46 +118,68 @@ function suggest(out, raw) {
 }
 
 // ── Share ────────────────────────────────────────────────────
-export function openPoints(delivId, personId) {
+// A share is a percentage of the person's capacity; points follow from it.
+// The picker speaks percent first (how people split their week) and keeps an
+// exact-points escape for "Ana gives this exactly 8".
+const PCTS = [10, 20, 25, 33, 50, 67, 75, 100]
+
+export function openShare(delivId, personId) {
   const d = deliverable(delivId), p = person(personId)
-  const m = d?.members.find(x => x.person === personId)
-  if (!m || !p) return
+  if (!d?.members.some(x => x.person === personId) || !p) return
   const a = analyze(state.doc, cal)
   const pa = a.people.get(personId), da = a.deliverables.get(delivId)
-  const opts = [1, 2, 3, 5, 8, 13, 21, 34, 55]
+  const sh = a.shares.get(shareKey(delivId, personId))
+  const who = p.name.trim() || 'Unnamed'
+  const freePct = Math.max(0, 100 - pa.pct)
   const quick = []
-  // Only offer what the person has: a share that covers the gap by over-booking them is not a fix.
-  if (da.gap > 0 && pa.free > 0) quick.push(`<button type="button" class="chip-btn" data-set="${m.points + Math.min(da.gap, pa.free)}">${pa.free >= da.gap ? 'Cover the gap' : 'Cover what they can'}: ${m.points + Math.min(da.gap, pa.free)}</button>`)
-  if (pa.free > 0 && pa.free !== da.gap) quick.push(`<button type="button" class="chip-btn" data-set="${m.points + pa.free}">Everything free: ${m.points + pa.free}</button>`)
-  const pop = open(`sp-${delivId}-${personId}`, `${head(`${p.name.trim() || 'Unnamed'} on ${d.name.trim() || 'this deliverable'}`)}
-    <div class="scale" role="group" aria-label="Points">${opts.map(v =>
-      `<button type="button" class="scale-btn" data-set="${v}" aria-pressed="${m.points === v}">${v}</button>`).join('')}</div>
+  // Only offer what the person has: covering a gap by over-booking them is not a fix.
+  if (da.gap > 0 && pa.free > 0) {
+    const pts = sh.points + Math.min(da.gap, pa.free)
+    quick.push(`<button type="button" class="chip-btn" data-pct="${pctFor(pts, pa.cap)}">${pa.free >= da.gap ? 'Cover the gap' : 'Cover what they can'}: ${pts} pts</button>`)
+  }
+  if (freePct > 0.5 && pa.free !== da.gap) quick.push(`<button type="button" class="chip-btn" data-pct="${Math.round((sh.pct + freePct) * 100) / 100}">All their free time: ${fmtPct(sh.pct + freePct)}</button>`)
+  const pop = open(`sp-${delivId}-${personId}`, `${head(`${who} on ${d.name.trim() || 'this deliverable'}`)}
+    <p class="pop-label">Share of ${escHtml(who)}'s time</p>
+    <div class="scale" role="group" aria-label="Percent of their capacity">${PCTS.map(v =>
+      `<button type="button" class="scale-btn" data-pct="${v}" aria-pressed="${Math.round(sh.pct) === v}">${v}%</button>`).join('')}</div>
     <div class="pop-row">
-      <label class="pop-label" for="popExact">Exact</label>
-      <input class="field field--num" id="popExact" type="number" min="1" max="999" step="1" value="${m.points}">
-      <button type="button" class="btn btn--secondary btn--sm" data-set="exact">Set</button>
+      <input class="field field--num" id="popPct" type="number" min="1" max="400" step="1" value="${Math.round(sh.pct)}" aria-label="Percent">
+      <span>%</span>
+      <button type="button" class="btn btn--secondary btn--sm" data-pct="exact">Set</button>
+      <span class="pop-or">or</span>
+      <input class="field field--num" id="popPts" type="number" min="1" max="999" step="1" value="${sh.points}" aria-label="Exact points">
+      <span>pts</span>
+      <button type="button" class="btn btn--secondary btn--sm" data-pct="points">Set</button>
     </div>
     ${quick.length ? `<div class="pop-row pop-row--wrap">${quick.join('')}</div>` : ''}
-    <p class="pop-note">${escHtml(p.name.trim() || 'Unnamed')} has ${pa.cap} this plan, ${pa.free < 0 ? `${-pa.free} over` : `${pa.free} free`}. ${d.estimate ? `The deliverable needs ${d.estimate}, has ${da.got}.` : 'The deliverable is not sized yet.'}</p>
-    <button type="button" class="btn btn--ghost btn--sm btn--block" data-set="remove">Take ${escHtml(p.name.trim() || 'them')} off</button>`,
+    <p class="pop-note">${fmtPct(sh.pct)} of ${escHtml(who)}'s ${pa.cap} pts is <strong>${sh.points} pts</strong> here. Across everything: ${fmtPct(pa.pct)}${pa.free < 0 ? `, ${-pa.free} pts over` : `, ${pa.free} pts free`}. ${d.estimate ? `The deliverable needs ${d.estimate}, has ${da.got}.` : 'The deliverable is not sized yet.'}${sh.fixed ? ' This share is fixed points from an older plan; setting it makes it a percentage.' : ''}</p>
+    <button type="button" class="btn btn--ghost btn--sm btn--block" data-pct="remove">Take ${escHtml(who)} off</button>`,
   'Change the share')
   if (!pop) return
-  pop.querySelector('#popExact').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pop.querySelector('[data-set="exact"]').click() } })
+  const enter = (id, act) => pop.querySelector(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pop.querySelector(`[data-pct="${act}"]`).click() } })
+  enter('#popPct', 'exact'); enter('#popPts', 'points')
   pop.onclick = e => {
     if (e.target.closest('[data-pop="close"]')) { closePop(); return }
-    const b = e.target.closest('[data-set]'); if (!b) return
-    const raw = b.dataset.set
+    const b = e.target.closest('[data-pct]'); if (!b) return
+    const raw = b.dataset.pct
     if (raw === 'remove') {
       closePop({ restore: false })
       snapshot(); unassign(delivId, personId); afterChange()
-      showToast(`${p.name || 'Person'} taken off ${d.name || 'the deliverable'}`)
+      showToast(`${who} taken off ${d.name || 'the deliverable'}`)
       return
     }
-    const v = raw === 'exact' ? Math.round(Number(pop.querySelector('#popExact').value)) : Number(raw)
-    if (!(v >= 1)) { showToast('A share is at least 1 point'); return }
+    let v
+    if (raw === 'exact') v = Number(pop.querySelector('#popPct').value)
+    else if (raw === 'points') {
+      const pts = Math.round(Number(pop.querySelector('#popPts').value))
+      if (!(pts >= 1)) { showToast('A share is at least 1 point'); return }
+      if (!pa.cap) { showToast(`${who} has no capacity in this plan, so points cannot be split`); return }
+      v = pctFor(pts, pa.cap)
+    } else v = Number(raw)
+    if (!(v >= 0.5)) { showToast('A share is at least 1%'); return }
     closePop({ restore: false })
-    if (v === m.points) return
-    snapshot(); setPoints(delivId, personId, v); afterChange()
+    if (!sh.fixed && Math.abs(v - sh.pct) < 0.005) return
+    snapshot(); setShare(delivId, personId, v); afterChange()
     document.querySelector(`[data-key="sp-${delivId}-${personId}"]`)?.focus({ preventScroll: true })
   }
 }

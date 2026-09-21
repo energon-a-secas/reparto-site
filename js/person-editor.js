@@ -1,17 +1,18 @@
 // ── Person editor ────────────────────────────────────────────
 // The modal behind a roster row's pencil: name, role, load, whole sprints
-// away, a holiday calendar of their own, vacation periods, open role. The
-// note under the form recomputes on every keystroke from the same
-// personCapacity() the roster uses, so it cannot disagree with the row.
+// away, a holiday calendar of their own, vacation periods, how their time is
+// split across deliverables, open role. The note under the form recomputes on
+// every keystroke from the same personCapacity() the roster uses, so it
+// cannot disagree with the row.
 
-import { state, snapshot, person, updatePerson, removePerson } from './state.js'
-import { analyze, personCapacity, roundFib } from './capacity.js'
+import { state, snapshot, person, deliverable, updatePerson, removePerson, assign, setShare, unassign } from './state.js'
+import { analyze, personCapacity, roundFib, shareKey } from './capacity.js'
 import { parseISO, addDays, iso, planRange, workdaysIn } from './calendar.js'
 import { cal, countryName, ensureHolidays } from './holidays.js'
 import { countryOptions } from './render-calendar.js'
 import { afterChange } from './render.js'
 import { openModal, closeModal } from './modal.js'
-import { $, escHtml, plural, showToast } from './utils.js'
+import { $, escHtml, plural, showToast, fmtPct } from './utils.js'
 
 const X_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>'
 
@@ -23,8 +24,58 @@ export function bindPersonEditor() {
   f.addEventListener('click', e => {
     if (e.target.closest('[data-action="add-vacation"]')) { addVacationRow(); paintNote(); return }
     const rm = e.target.closest('[data-vac-remove]')
-    if (rm) { rm.closest('li').remove(); paintNote() }
+    if (rm) { rm.closest('li').remove(); paintNote(); return }
+    const drm = e.target.closest('[data-dist-remove]')
+    if (drm) { drm.closest('li').remove(); fillDistAdd(); paintNote(); return }
+    if (e.target.closest('[data-dist="even"]')) { splitEvenly(); paintNote() }
   })
+  $('distAdd').addEventListener('change', e => {
+    const id = e.target.value; e.target.value = ''
+    if (!id) return
+    const used = distRows().reduce((t, r) => t + r.pct, 0)
+    addDistRow(id, Math.max(5, Math.round(100 - used)) || 25)
+    fillDistAdd(); paintNote()
+    $('distList').lastElementChild?.querySelector('input').focus()
+  })
+}
+
+// ── How their time is split ──────────────────────────────────
+// One row per deliverable they are on, in percent of their capacity. Rows
+// remember the value they opened with, so saving an untouched row leaves an
+// old fixed-points share alone.
+function addDistRow(delivId, pct, initial = null) {
+  const d = deliverable(delivId); if (!d) return
+  const name = d.name.trim() || 'Untitled deliverable'
+  $('distList').insertAdjacentHTML('beforeend', `<li class="dist-row" data-deliv="${delivId}" data-initial="${initial ?? ''}">
+    <span class="dist-name" title="${escHtml(name)}">${escHtml(name)}</span>
+    <input type="number" class="field field--num" min="1" max="400" step="any" value="${Math.round(pct * 100) / 100}" aria-label="Percent of their time on ${escHtml(name)}">
+    <span class="dist-unit">%</span>
+    <span class="dist-pts"></span>
+    <button type="button" class="icon-btn" data-dist-remove aria-label="Take them off ${escHtml(name)}">${X_ICON}</button>
+  </li>`)
+}
+
+function distRows() {
+  return [...$('distList').querySelectorAll('.dist-row')].map(li => ({
+    li, deliv: li.dataset.deliv, pct: Number(li.querySelector('input').value) || 0,
+    initial: li.dataset.initial === '' ? null : Number(li.dataset.initial),
+  }))
+}
+
+/** The deliverables this person is not on yet, for the "Add them to" picker. */
+function fillDistAdd() {
+  const on = new Set(distRows().map(r => r.deliv))
+  const left = state.doc.deliverables.filter(d => !on.has(d.id))
+  $('distAdd').innerHTML = `<option value="">${left.length ? 'Add them to…' : 'On every deliverable'}</option>` +
+    left.map(d => `<option value="${d.id}">${escHtml(d.name.trim() || 'Untitled deliverable')}</option>`).join('')
+  $('distAdd').disabled = !left.length
+}
+
+/** 100% shared out in whole numbers, the remainder on the last rows: 33, 33, 34. */
+function splitEvenly() {
+  const rows = distRows(); if (!rows.length) return
+  const base = Math.floor(100 / rows.length), extra = 100 - base * rows.length
+  rows.forEach((r, i) => { r.li.querySelector('input').value = base + (i >= rows.length - extra ? 1 : 0) })
 }
 
 export function openPerson(id) {
@@ -45,6 +96,13 @@ export function openPerson(id) {
   f.elements.open.checked = p.open
   $('vacList').innerHTML = ''
   for (const v of p.vacations) addVacationRow(v)
+  $('distList').innerHTML = ''
+  const a = analyze(state.doc, cal)
+  for (const d of state.doc.deliverables) {
+    const sh = a.shares.get(shareKey(d.id, p.id))
+    if (sh) addDistRow(d.id, sh.pct, Math.round(sh.pct * 100) / 100)
+  }
+  fillDistAdd()
   $('personModalTitle').textContent = p.name ? `Edit ${p.name}` : 'Edit person'
   paintNote()
   openModal('personModal')
@@ -116,7 +174,17 @@ function paintNote() {
   if (pc.away) steps.push(`× ${s.sprints - pc.away} of ${s.sprints} sprints`)
   if (v.load < 100) steps.push(`× ${v.load}%`)
   if (s.buffer) steps.push(`− ${s.buffer}% buffer`)
-  $('personCapNote').innerHTML = `${escHtml(steps.join(' '))} = <strong>${+pc.raw.toFixed(1)}</strong>, planned as <strong>${roundFib(pc.raw, s.rounding)}</strong>.`
+  const cap = roundFib(pc.raw, s.rounding)
+  $('personCapNote').innerHTML = `${escHtml(steps.join(' '))} = <strong>${+pc.raw.toFixed(1)}</strong>, planned as <strong>${cap}</strong>.`
+  // The split, previewed against the capacity above (the page rounds the rows together on save).
+  const rows = distRows()
+  let total = 0
+  for (const r of rows) { total += r.pct; r.li.querySelector('.dist-pts').textContent = `≈ ${Math.round((cap * r.pct) / 100)} pts` }
+  const over = total - 100
+  $('distTotal').innerHTML = rows.length
+    ? `<span class="dist-meter" aria-hidden="true"><i style="width:${Math.min(100, total)}%"></i></span>
+       <span class="${over > 0.5 ? 'error-text' : ''}">${fmtPct(total)} of their time booked${over > 0.5 ? `: ${fmtPct(over)} over` : total < 99.5 ? `, ${fmtPct(100 - total)} free (≈ ${Math.round((cap * (100 - total)) / 100)} pts)` : ''}</span>`
+    : '<span class="dist-empty">Not on any deliverable yet. Add them to one, or drag them onto a card.</span>'
 }
 
 function onSave(e) {
@@ -124,8 +192,22 @@ function onSave(e) {
   const id = $('personEdit').dataset.id
   if (!person(id)) { closeModal('personModal'); return }
   snapshot(); updatePerson(id, fields())
+  applyDistribution(id)
   closeModal('personModal')
   afterChange()
+}
+
+/** Write the split back: changed rows set, new rows added, missing rows taken off. */
+function applyDistribution(pid) {
+  const rows = distRows()
+  const keep = new Set(rows.map(r => r.deliv))
+  for (const d of state.doc.deliverables) if (!keep.has(d.id) && d.members.some(m => m.person === pid)) unassign(d.id, pid)
+  for (const r of rows) {
+    if (!(r.pct > 0)) { unassign(r.deliv, pid); continue }
+    const has = deliverable(r.deliv)?.members.some(m => m.person === pid)
+    if (!has) assign(r.deliv, pid, r.pct)
+    else if (r.initial === null || Math.abs(r.pct - r.initial) >= 0.005) setShare(r.deliv, pid, r.pct)
+  }
 }
 
 export function removeEditedPerson() {

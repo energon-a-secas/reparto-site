@@ -124,16 +124,19 @@ export function analyze(doc, cal = NO_CAL) {
   const people = new Map()
   for (const p of doc.people) {
     const pc = personCapacity(p, doc, cal)
-    people.set(p.id, { raw: pc.raw, lost: pc.lost, away: pc.away, cap: roundFib(pc.raw, s.rounding), used: 0, count: 0 })
+    people.set(p.id, { raw: pc.raw, lost: pc.lost, away: pc.away, cap: roundFib(pc.raw, s.rounding), used: 0, pct: 0, count: 0 })
   }
+  const shares = shareAnalysis(doc, people)
   const deliverables = new Map()
   let demand = 0, allocated = 0, shortfall = 0, unsized = 0
   for (const d of doc.deliverables) {
     let got = 0
     for (const m of d.members) {
-      got += m.points
+      const sh = shares.get(shareKey(d.id, m.person))
+      if (!sh) continue
+      got += sh.points
       const p = people.get(m.person)
-      if (p) { p.used += m.points; p.count += 1 }
+      if (p) { p.used += sh.points; p.pct += sh.pct; p.count += 1 }
     }
     allocated += got
     if (d.estimate) demand += d.estimate; else unsized += 1
@@ -157,11 +160,55 @@ export function analyze(doc, cal = NO_CAL) {
     offPts: base - ft.total,                // what holidays and team days took from a full-timer
     offDays: ft.lost.holiday + ft.lost.team,
     unitRaw: ft.raw, unit: roundFib(ft.raw, s.rounding),
-    people, deliverables, capacity, raw, openCap, hiredCap: capacity - openCap,
+    people, deliverables, shares, capacity, raw, openCap, hiredCap: capacity - openCap,
     demand, allocated, shortfall, unsized, free, over,
     calendar: calendarStatus(doc, cal),
   }
 }
+
+// ── Shares ───────────────────────────────────────────────────
+// A share is a percentage of the person's planned capacity (`pct`), so it
+// follows that capacity when a vacation, a holiday or the sprint count moves
+// it: 50% of Ana is 17 points at 34 and 10 at 21. A share saved before
+// percentages existed carries fixed `points` instead and keeps them until it
+// is edited.
+
+export const shareKey = (delivId, personId) => `${delivId}:${personId}`
+
+/**
+ * Points for every share. One person's percentage shares are rounded
+ * together by largest remainder, so they add up to exactly
+ * round(cap x total% / 100): 3 x 33.33% of 34 is 11 + 11 + 12, never 33 or 36.
+ */
+export function shareAnalysis(doc, people) {
+  const out = new Map()
+  const byPerson = new Map()
+  for (const d of doc.deliverables) {
+    for (const m of d.members) {
+      const cap = people.get(m.person)?.cap ?? 0
+      if (m.pct == null) {
+        out.set(shareKey(d.id, m.person), { points: m.points || 0, pct: cap ? ((m.points || 0) / cap) * 100 : 0, fixed: true })
+      } else {
+        if (!byPerson.has(m.person)) byPerson.set(m.person, [])
+        byPerson.get(m.person).push({ key: shareKey(d.id, m.person), pct: m.pct })
+      }
+    }
+  }
+  for (const [pid, list] of byPerson) {
+    const cap = people.get(pid)?.cap ?? 0
+    const exact = list.map(x => (cap * x.pct) / 100)
+    const floors = exact.map(Math.floor)
+    const target = Math.round(exact.reduce((t, x) => t + x, 0))
+    let left = target - floors.reduce((t, x) => t + x, 0)
+    const order = exact.map((x, i) => [x - floors[i], i]).sort((a, b) => b[0] - a[0] || a[1] - b[1])
+    for (const [, i] of order) { if (left <= 0) break; floors[i] += 1; left -= 1 }
+    list.forEach((x, i) => out.set(x.key, { points: floors[i], pct: x.pct, fixed: false }))
+  }
+  return out
+}
+
+/** A percentage that gives `points` of a capacity, kept to two decimals. */
+export const pctFor = (points, cap) => (cap > 0 ? Math.round((points / cap) * 10000) / 100 : 0)
 
 /** Which holiday calendars the plan needs, and whether each one arrived. */
 function calendarStatus(doc, cal) {

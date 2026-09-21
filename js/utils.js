@@ -50,6 +50,9 @@ export function faceColor(id) {
   return FACES[h % FACES.length]
 }
 
+/** A share's percentage as the page shows it: whole numbers, one decimal under 10%. */
+export const fmtPct = p => `${p < 10 && !Number.isInteger(p) ? Math.round(p * 10) / 10 : Math.round(p)}%`
+
 export const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`
 
 export function download(name, text, type = 'text/plain') {

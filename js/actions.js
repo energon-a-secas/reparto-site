@@ -2,21 +2,21 @@
 // The operations more than one input path reaches: a pointer drop, a
 // keyboard carry and a flag's fix all land here, so they cannot disagree.
 
-import { state, ui, snapshot, person, deliverable, assign, unassign, moveShare, setPoints, addPerson } from './state.js'
-import { analyze } from './capacity.js'
+import { state, ui, snapshot, person, deliverable, assign, unassign, moveShare, setShare, addPerson } from './state.js'
+import { analyze, pctFor, shareKey } from './capacity.js'
 import { cal } from './holidays.js'
 import { afterChange, renderAll } from './render.js'
-import { showToast } from './utils.js'
+import { showToast, fmtPct } from './utils.js'
 
 const nameOf = p => p?.name.trim() || 'Unnamed'
 
 /**
- * The share a drop gives when nobody typed a number: what the person has
- * free, up to what the deliverable still needs. An unsized deliverable, or
- * one already covered, gets one sprint's worth instead of the whole plan.
+ * The share a drop gives when nobody typed a number, in points: what the
+ * person has free, up to what the deliverable still needs. An unsized
+ * deliverable, or one already covered, gets one sprint's worth instead of the
+ * whole plan. It is stored as the matching percentage of their capacity.
  */
-export function defaultShare(personId, delivId) {
-  const a = analyze(state.doc, cal)
+export function defaultShare(personId, delivId, a = analyze(state.doc, cal)) {
   const free = a.people.get(personId)?.free ?? 0
   const need = deliverable(delivId)?.estimate ? a.deliverables.get(delivId).gap : 0
   const sprint = Math.max(1, a.sprint)
@@ -43,14 +43,23 @@ export function dropPerson(personId, from, target) {
   const d = deliverable(target)
   if (!d || from === target) return false
   if (from) {
-    snapshot(); moveShare(from, target, personId); afterChange()
+    const a = analyze(state.doc, cal)
+    const moved = a.shares.get(shareKey(from, personId))?.pct ?? 0
+    const there = a.shares.get(shareKey(target, personId))?.pct ?? 0
+    snapshot(); moveShare(from, target, personId, moved, there); afterChange()
     showToast(`${nameOf(p)}'s share moved to ${d.name || 'the deliverable'}`)
     return true
   }
-  const pts = defaultShare(personId, target)
-  snapshot(); assign(target, personId, pts); afterChange()
-  const left = analyze(state.doc, cal).people.get(personId).free
-  showToast(`${nameOf(p)} gives ${pts} pts to ${d.name || 'the deliverable'} (${left < 0 ? `${-left} over` : `${left} free`})`)
+  const a = analyze(state.doc, cal)
+  const pa = a.people.get(personId)
+  const pts = defaultShare(personId, target, a)
+  // No capacity to take a percentage of: a full share, and the flags say why.
+  const pct = pa.cap ? pctFor(pts, pa.cap) : 100
+  snapshot(); assign(target, personId, pct, a.shares.get(shareKey(target, personId))?.pct ?? 0); afterChange()
+  const after = analyze(state.doc, cal)
+  const got = after.shares.get(shareKey(target, personId))
+  const left = after.people.get(personId).free
+  showToast(`${nameOf(p)} gives ${fmtPct(got.pct)} (${got.points} pts) to ${d.name || 'the deliverable'} · ${left < 0 ? `${-left} over` : `${left} free`}`)
   return true
 }
 
@@ -89,13 +98,16 @@ export function applyFix(action, arg, openEstimate) {
   }
   if (action === 'trim') {
     const d = deliverable(arg); if (!d?.estimate) return
+    const a = analyze(state.doc, cal)
     snapshot()
-    let extra = d.members.reduce((s, m) => s + m.points, 0) - d.estimate
+    // Cut from the last share first, in points, then store what is left as a percentage.
+    let extra = a.deliverables.get(d.id).got - d.estimate
     for (const m of [...d.members].reverse()) {
       if (extra <= 0) break
-      const cut = Math.min(extra, m.points)
+      const sh = a.shares.get(shareKey(d.id, m.person)), cap = a.people.get(m.person)?.cap ?? 0
+      const cut = Math.min(extra, sh.points)
       extra -= cut
-      if (cut === m.points) unassign(d.id, m.person); else setPoints(d.id, m.person, m.points - cut)
+      if (cut === sh.points || !cap) unassign(d.id, m.person); else setShare(d.id, m.person, pctFor(sh.points - cut, cap))
     }
     afterChange()
     showToast(`${d.name || 'Deliverable'} trimmed to ${d.estimate} pts`)

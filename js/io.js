@@ -4,12 +4,12 @@
 // normalizeDoc(), the same gate as a saved session.
 
 import { state, resetTo, normalizeDoc } from './state.js'
-import { analyze, ROUNDING } from './capacity.js'
+import { analyze, ROUNDING, shareKey } from './capacity.js'
 import { cal, countryName } from './holidays.js'
 import { planRange, fmtDay } from './calendar.js'
 import { computeFlags, CATEGORIES } from './flags.js'
 import { afterChange } from './render.js'
-import { showToast, download, copyText, slug, plural } from './utils.js'
+import { showToast, download, copyText, slug, plural, fmtPct } from './utils.js'
 
 const PREFIX = '#p='
 
@@ -73,18 +73,19 @@ export function toMarkdown(doc = state.doc) {
     ...doc.deliverables.map(d => {
       const da = a.deliverables.get(d.id)
       const st = !d.estimate ? 'Unsized' : !d.members.length ? 'Nobody on it' : da.gap > 0 ? `Short ${da.gap}` : da.gap < 0 ? `${-da.gap} over` : 'Staffed'
-      return `| ${cell(d.name || 'Untitled')} | ${d.estimate ?? '?'} | ${da.got} | ${cell(d.members.map(m => `${name(m.person)} ${m.points}`).join(', ') || 'none')} | ${st} |`
+      const who = d.members.map(m => { const sh = a.shares.get(shareKey(d.id, m.person)); return `${name(m.person)} ${sh.points} (${fmtPct(sh.pct)})` })
+      return `| ${cell(d.name || 'Untitled')} | ${d.estimate ?? '?'} | ${da.got} | ${cell(who.join(', ') || 'none')} | ${st} |`
     }),
     '',
     '## People',
     '',
-    '| Person | Role | Country | Days off | Capacity | Booked | Free |',
-    '|---|---|---|---|---:|---:|---:|',
+    '| Person | Role | Country | Days off | Capacity | Booked | Of their time | Free |',
+    '|---|---|---|---|---:|---:|---:|---:|',
     ...doc.people.map(p => {
       const pa = a.people.get(p.id)
       const off = [pa.lost.holiday && `${pa.lost.holiday} holiday`, pa.lost.team && `${pa.lost.team} team`, pa.lost.vacation && `${pa.lost.vacation} vacation`, pa.away && `${plural(pa.away, 'sprint')} away`].filter(Boolean).join(', ') || 'none'
       const country = p.country ? countryName(p.country) : s.countries.length ? `${countryName(s.countries[0])} (default)` : 'none'
-      return `| ${cell(p.name || 'Unnamed')}${p.open ? ' (open role)' : ''} | ${cell(p.role) || 'none'} | ${country} | ${off} | ${pa.cap} | ${pa.used} | ${pa.free} |`
+      return `| ${cell(p.name || 'Unnamed')}${p.open ? ' (open role)' : ''} | ${cell(p.role) || 'none'} | ${country} | ${off} | ${pa.cap} | ${pa.used} | ${fmtPct(pa.pct)} | ${pa.free} |`
     }),
   ]
   const flags = computeFlags(doc, a)

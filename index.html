@@ -239,6 +239,15 @@
           <ul class="vac-list" id="vacList"></ul>
           <button type="button" class="btn btn--ghost btn--sm" data-action="add-vacation">Add a vacation</button>
         </fieldset>
+        <fieldset class="dist">
+          <legend class="lbl">How their time is split</legend>
+          <ul class="dist-list" id="distList"></ul>
+          <div class="dist-total" id="distTotal"></div>
+          <div class="dist-actions">
+            <select class="field" id="distAdd" aria-label="Add them to a deliverable"></select>
+            <button type="button" class="btn btn--ghost btn--sm" data-dist="even">Split evenly</button>
+          </div>
+        </fieldset>
         <label class="check"><input type="checkbox" name="open"> Open role: counted in capacity, flagged until hired</label>
         <p class="form-note" id="personCapNote"></p>
       </form>
@@ -266,7 +275,7 @@
         <p><strong>Capacity lands on the Fibonacci scale</strong>, the same scale the work is sized on, so 32 becomes 34 and 48 becomes 55. Pick <em>Fibonacci below</em> for a safer plan, where 32 becomes 21. The raw number is always shown next to the rounded one.</p>
         <p><strong>Load and sprints away</strong> scale one person: half-time on this team over four sprints is 16 raw, 13 planned. <strong>Buffer</strong> holds back a percentage of everyone's capacity for support and unplanned work.</p>
         <p><strong>The calendar takes days out.</strong> Sprints start on the date you pick. Public holidays come from the country you choose for the team (anyone can have their own), team days off apply to everyone, and vacations belong to one person. A day off only costs a focus day when it lands on a working day, and a week someone spends entirely away costs no meeting day either.</p>
-        <p><strong>A share</strong> is the points a person gives one deliverable. Dropping someone on a deliverable gives it what they have free, up to what it still needs. Click the number on a share to change it.</p>
+        <p><strong>A share is a percentage of someone's time</strong>, and its points follow their capacity: 50% of an engineer planned at 34 is 17 points, and if a vacation brings them to 21 it becomes 10 without anyone touching it. A person can hold shares on as many deliverables as you like, and a deliverable can have as many people. Dropping someone on a card gives it what they have free, up to what it still needs. Click the number on a share to set a percentage (or exact points), or open the pencil on their row to see and edit their whole split at once.</p>
         <h3>Keys</h3>
         <ul class="keys">
           <li><kbd>Enter</kbd> on a person or a share picks it up; <kbd>Enter</kbd> on a deliverable drops it there; <kbd>Esc</kbd> puts it back</li>

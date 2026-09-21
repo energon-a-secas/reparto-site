@@ -450,6 +450,24 @@ select.field option { background: var(--surface-solid); }
   border: 1px solid var(--border-strong); border-radius: 999px; cursor: pointer;
 }
 .share-pts:hover { border-color: var(--accent-bright); }
+.share-pts { display: inline-flex; align-items: baseline; gap: 4px; }
+.share-pct { font-size: 10px; font-weight: 600; color: var(--text-muted); }
+
+/* How one person's time is split (person editor) */
+.dist { border: 0; display: flex; flex-direction: column; gap: 8px; }
+.dist-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.dist-list:empty { display: none; }
+.dist-row { display: grid; grid-template-columns: minmax(0, 1fr) 72px auto 64px auto; align-items: center; gap: 6px; }
+.dist-name { font-size: var(--text-sm); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dist-row .field.field--num { width: 72px; }
+.dist-unit { font-size: var(--text-xs); color: var(--text-muted); }
+.dist-pts { font-size: var(--text-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; text-align: right; }
+.dist-total { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.dist-meter { display: block; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.dist-meter i { display: block; height: 100%; background: var(--accent); }
+.dist-empty { color: var(--text-muted); }
+.dist-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.dist-actions .field { width: auto; min-width: 200px; }
 .share-x {
   display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0;
   color: var(--text-muted); background: transparent; border: 0; border-radius: 50%; cursor: pointer;

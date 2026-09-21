@@ -91,7 +91,9 @@ export function normalizeDoc(raw) {
     const members = []
     for (const m of Array.isArray(d.members) ? d.members : []) {
       if (!m || !people.some(p => p.id === m.person) || members.some(x => x.person === m.person)) continue
-      members.push({ person: m.person, points: num(Math.round(m.points), 1, 999, 1) })
+      // pct is the share of the person's capacity (dynamic); points is a fixed share from before percentages.
+      if (m.pct != null && Number.isFinite(Number(m.pct))) members.push({ person: m.person, pct: Math.round(num(m.pct, 0.5, 400, 100) * 100) / 100 })
+      else members.push({ person: m.person, points: num(Math.round(m.points), 1, 999, 1) })
     }
     const est = Number(d.estimate)
     deliverables.push({
@@ -190,30 +192,39 @@ export function addDeliverable(fields = {}) {
 export function updateDeliverable(id, fields) { Object.assign(deliverable(id) || {}, fields) }
 export function removeDeliverable(id) { state.doc.deliverables = state.doc.deliverables.filter(d => d.id !== id) }
 
-/** Add points for a person on a deliverable; an existing share grows instead of duplicating. */
-export function assign(delivId, personId, points) {
+const pct2 = x => Math.round(Math.min(400, Math.max(0.5, x)) * 100) / 100
+
+/**
+ * Give a person `pct` percent of their capacity on a deliverable. An existing
+ * share grows instead of duplicating; a fixed-points share becomes a
+ * percentage (`fixedPct` is what its points were worth).
+ */
+export function assign(delivId, personId, pct, fixedPct = 0) {
   const d = deliverable(delivId); if (!d || !person(personId)) return false
   const m = d.members.find(x => x.person === personId)
-  if (m) m.points += points
-  else d.members.push({ person: personId, points })
+  if (m) { m.pct = pct2((m.pct ?? fixedPct) + pct); delete m.points }
+  else d.members.push({ person: personId, pct: pct2(pct) })
   return true
+}
+/** Set one share to `pct` percent of the person's capacity. */
+export function setShare(delivId, personId, pct) {
+  const m = deliverable(delivId)?.members.find(x => x.person === personId)
+  if (m) { m.pct = pct2(pct); delete m.points }
 }
 export function unassign(delivId, personId) {
   const d = deliverable(delivId); if (!d) return
   d.members = d.members.filter(m => m.person !== personId)
 }
-export function setPoints(delivId, personId, points) {
-  const m = deliverable(delivId)?.members.find(x => x.person === personId)
-  if (m) m.points = Math.max(1, Math.round(points))
-}
-/** Move a person's whole share from one deliverable to another. */
-export function moveShare(fromId, toId, personId) {
+/**
+ * Move a person's whole share to another deliverable. The caller passes both
+ * shares as effective percentages (a fixed-points share has one too), so a
+ * move onto a deliverable they already hold merges into one percentage.
+ */
+export function moveShare(fromId, toId, personId, movedPct, therePct = 0) {
   const from = deliverable(fromId), to = deliverable(toId)
-  const m = from?.members.find(x => x.person === personId)
-  if (!m || !to || fromId === toId) return false
-  from.members = from.members.filter(x => x !== m)
-  assign(toId, personId, m.points)
-  return true
+  if (!from || !to || fromId === toId || !from.members.some(x => x.person === personId)) return false
+  from.members = from.members.filter(x => x.person !== personId)
+  return assign(toId, personId, movedPct, therePct)
 }
 /** Reorder deliverables: drop `id` before `beforeId` (or at the end). */
 export function reorderDeliverable(id, beforeId) {

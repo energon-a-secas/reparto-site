@@ -30,6 +30,7 @@ export function engineers(points, unit) {
   const e = asEngineers(points, unit)
   if (e >= 1.05) return `about ${e} engineers`
   if (e >= 0.95) return 'about one engineer'
+  if (e < 0.1) return 'under a tenth of an engineer'
   return `about ${e} of an engineer`
 }
 
@@ -108,7 +109,7 @@ export function computeFlags(doc, a = analyze(doc)) {
     const name = nameOf.get(p.id)
     if (!p.name.trim()) add('warn', 'data', 'Someone on the team has no name.', t)
     if (!pa.cap) add('warn', 'data', `${name} has no capacity in this plan (load or sprints away).`, t)
-    if (pa.free < 0) add('error', 'load', `${name} is booked ${pa.used} of ${pts(pa.cap)}, ${-pa.free} over.`, t)
+    if (pa.free < 0) add('error', 'load', `${name} is booked ${Math.round(pa.pct)}% of their time (${pa.used} of ${pts(pa.cap)}), ${-pa.free} over.`, t)
     if (pa.count > SPREAD_LIMIT) add('warn', 'practice', `${name} is split across ${pa.count} deliverables. Every switch costs focus.`, t)
   }
 

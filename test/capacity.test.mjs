@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { roundFib, fibFloor, fibCeil, fibNearest, analyze, personCapacity, sprintPoints, DEFAULT_SETTINGS } from '../js/capacity.js'
+import { roundFib, fibFloor, fibCeil, fibNearest, analyze, personCapacity, sprintPoints, DEFAULT_SETTINGS, shareKey, pctFor } from '../js/capacity.js'
 import { sprintWindows, daysOffFor, nextQuarterStart, workdaysIn } from '../js/calendar.js'
 import { computeFlags } from '../js/flags.js'
 
@@ -112,7 +112,71 @@ test('flags: missing estimate, nobody on it, short, over-booked, team short', ()
   has(/^error:data:A has no estimate/)
   has(/^error:people:Nobody is on B/)
   has(/^error:people:C is short 21 pts/)
-  has(/^error:load:P0 is booked 42 of 34/)
+  has(/^error:load:P0 is booked 124% of their time \(42 of 34 pts\), 8 over/)
   has(/^error:people:The plan needs 97 pts and the team has 68/)
   has(/^warn:practice:C \(55 pts\) is bigger than one engineer/)
+})
+
+// ── Percentage shares ────────────────────────────────────────
+const deliv = (id, estimate, members) => ({ id, name: id.toUpperCase(), estimate, note: '', members })
+
+test('a percentage share follows the person\'s capacity', () => {
+  const d = plan({}, [{}], [deliv('x', 21, [{ person: 'p0', pct: 50 }])])
+  assert.equal(analyze(d).shares.get(shareKey('x', 'p0')).points, 17)          // 50% of 34
+  d.people[0].vacations = [{ from: '2026-10-19', to: '2026-10-30' }]           // two weeks off: 32 - 8 = 24 -> 21
+  assert.equal(analyze(d).shares.get(shareKey('x', 'p0')).points, 11)          // 50% of 21, rounded half up
+})
+
+test('one person\'s shares round together and add up exactly', () => {
+  const d = plan({}, [{}], [deliv('a', 13, [{ person: 'p0', pct: 33.33 }]), deliv('b', 13, [{ person: 'p0', pct: 33.33 }]), deliv('c', 13, [{ person: 'p0', pct: 33.34 }])])
+  const a = analyze(d)
+  const pts = ['a', 'b', 'c'].map(x => a.shares.get(shareKey(x, 'p0')).points)
+  assert.equal(pts.reduce((t, x) => t + x, 0), 34)                             // never 33 or 36
+  assert.ok(pts.every(x => x === 11 || x === 12), pts.join(','))
+  assert.equal(a.people.get('p0').used, 34)
+  assert.equal(Math.round(a.people.get('p0').pct), 100)
+})
+
+test('50 / 20 / 30 of a 34-point engineer', () => {
+  const d = plan({}, [{}], [deliv('a', 21, [{ person: 'p0', pct: 50 }]), deliv('b', 8, [{ person: 'p0', pct: 20 }]), deliv('c', 13, [{ person: 'p0', pct: 30 }])])
+  const a = analyze(d)
+  assert.deepEqual(['a', 'b', 'c'].map(x => a.shares.get(shareKey(x, 'p0')).points), [17, 7, 10])
+  assert.equal(a.people.get('p0').free, 0)
+})
+
+test('over 100% books past capacity and is flagged', () => {
+  const d = plan({}, [{}], [deliv('a', 21, [{ person: 'p0', pct: 50 }]), deliv('b', 21, [{ person: 'p0', pct: 62 }])])
+  const a = analyze(d)
+  assert.equal(a.people.get('p0').used, 38)                                    // 17 + 21.08 -> 38
+  assert.equal(a.people.get('p0').free, -4)
+  assert.ok(computeFlags(d, a).some(f => /booked 112% of their time/.test(f.text)))
+})
+
+test('several people on one deliverable, one person on several', () => {
+  const d = plan({}, [{}, {}], [deliv('a', 34, [{ person: 'p0', pct: 50 }, { person: 'p1', pct: 50 }]), deliv('b', 34, [{ person: 'p0', pct: 50 }, { person: 'p1', pct: 50 }])])
+  const a = analyze(d)
+  assert.equal(a.deliverables.get('a').got, 34)
+  assert.equal(a.deliverables.get('b').got, 34)
+  assert.equal(a.people.get('p0').free, 0)
+})
+
+test('a fixed-points share from an older plan keeps its points', () => {
+  const d = plan({}, [{}], [deliv('a', 21, [{ person: 'p0', points: 21 }])])
+  const sh = analyze(d).shares.get(shareKey('a', 'p0'))
+  assert.equal(sh.points, 21)
+  assert.ok(sh.fixed)
+  assert.equal(pctFor(21, 34), 61.76)
+})
+
+test('state: assign merges, moveShare merges by effective percent', async () => {
+  globalThis.localStorage ??= { getItem: () => null, setItem() {} }
+  const st = await import('../js/state.js')
+  st.state.doc = st.normalizeDoc(plan({}, [{}], [deliv('a', 21, [{ person: 'p0', points: 17 }]), deliv('b', 21, [{ person: 'p0', pct: 10 }])]))
+  st.assign('a', 'p0', 10, 50)                          // fixed 17 pts (50%) + 10% -> 60%
+  assert.deepEqual(st.state.doc.deliverables[0].members[0], { person: 'p0', pct: 60 })
+  st.moveShare('a', 'b', 'p0', 60, 10)
+  assert.equal(st.state.doc.deliverables[0].members.length, 0)
+  assert.deepEqual(st.state.doc.deliverables[1].members[0], { person: 'p0', pct: 70 })
+  const back = st.normalizeDoc(JSON.parse(JSON.stringify(st.state.doc)))
+  assert.equal(back.deliverables[1].members[0].pct, 70)
 })
