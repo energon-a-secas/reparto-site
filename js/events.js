@@ -17,6 +17,7 @@ import { pickUp, putDown, cancelCarry, applyFix, show } from './actions.js'
 import { openEstimate, openShare, closePop, popAnchor, repositionPop } from './popover.js'
 import { openModal, modalKeydown, modalClick } from './modal.js'
 import { runExport, importFile } from './io.js'
+import { openExport, bindExportDialog } from './export-dialog.js'
 import { $, showToast } from './utils.js'
 
 export function bindEvents() {
@@ -30,6 +31,7 @@ export function bindEvents() {
   $('personForm').addEventListener('submit', onAddPerson)
   $('dayOffForm').addEventListener('submit', onAddDayOff)
   bindPersonEditor()
+  bindExportDialog()
   $('importFile').addEventListener('change', e => { const f = e.target.files[0]; if (f) importFile(f); e.target.value = '' })
 }
 
@@ -102,6 +104,7 @@ function runAction(action, el = null) {
       break
     case 'import': $('importFile').click(); break
     case 'help': openModal('helpModal'); break
+    case 'export': openExport(el.dataset.table); break
     case 'add-deliverable': {
       snapshot(); const d = addDeliverable(); afterChange()
       const input = document.querySelector(`[data-key="dn-${d.id}"]`)

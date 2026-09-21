@@ -59,6 +59,7 @@ the one in Mexico alone.
 - **Flags that point somewhere** -- missing estimates, people with no country, deliverables nobody took, short or over-staffed work, over-booked people, open roles carrying work, a plan bigger than the team; each one jumps to its card, and several carry a one-step fix (add the person with the most room, size it, trim it, add open roles)
 - **Totals in points and engineers** -- team capacity, demand, booked and missing, with every gap also expressed as engineers at one full plan each
 - **Works on a phone** -- the page scrolls through the roster, a long press starts a drag, a tap carries someone to a card, and a sticky line above the board keeps the top flag and its fix in view
+- **Spreadsheet and table export** -- a real .xlsx with a sheet per table (by deliverable, by engineer, assignments for pivot tables, the flags, and the settings behind the numbers), or any one table as CSV, a paste straight into Google Sheets or Excel, or a Markdown table; the Flags panel exports its findings in one click, and a live preview shows the rows before they leave
 - **Undo, share, export** -- 40 levels of undo, a share link that carries the plan in its own URL fragment, Markdown for a doc or a Slack thread, JSON in and out
 - **Nothing leaves the page** -- the plan lives in localStorage; holidays are static files on the same origin
 
@@ -109,7 +110,11 @@ reparto-site/
 │   ├── popover.js        # Estimate picker and share editor
 │   ├── person-editor.js  # Load, sprints away, country, vacations
 │   ├── events.js         # Delegated clicks, changes, keys
-│   ├── io.js             # Share link, Markdown, JSON
+│   ├── io.js             # Share link, Markdown report, JSON
+│   ├── tables.js         # The plan as tables: by deliverable, by engineer, assignments, flags, settings
+│   ├── formats.js        # CSV (BOM, formula-safe), tab-separated for a paste, Markdown tables
+│   ├── xlsx.js           # .xlsx writer with no library: SpreadsheetML in a stored zip
+│   ├── export-dialog.js  # Pick a table, preview it, download or copy it
 │   ├── modal.js          # Blocking dialogs
 │   └── utils.js          # Small helpers
 ├── data/holidays/        # One JSON per country, plus index.json

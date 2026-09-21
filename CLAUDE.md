@@ -31,7 +31,8 @@ The model is pure and Node-tested; the view is ES modules over one `state.doc`.
 | `js/dnd.js` | pointer drag, 8px threshold, edge auto-scroll, a tap picks up (carry) |
 | `js/actions.js` | `dropPerson` (shared by drag, carry and fixes), `defaultShare`, flag fixes, `show()` |
 | `js/popover.js`, `js/person-editor.js` | estimate picker and share editor; the person modal with country and vacations |
-| `js/events.js`, `js/io.js`, `js/modal.js`, `js/seed.js`, `js/utils.js` | wiring, share link / Markdown / JSON, dialogs, the example plan, helpers |
+| `js/events.js`, `js/io.js`, `js/modal.js`, `js/seed.js`, `js/utils.js` | wiring, share link / Markdown report / JSON, dialogs, the example plan, helpers |
+| `js/tables.js`, `js/formats.js`, `js/xlsx.js`, `js/export-dialog.js` | the plan as `{ name, columns, rows }` tables; CSV / TSV / Markdown; a library-free .xlsx (SpreadsheetML in a stored zip); the Export dialog. Pure except the dialog, tested in `test/tables.test.mjs` |
 
 Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,footer,beacon}.js`, `css/neorgon-*.css`.
 
@@ -49,6 +50,8 @@ Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,f
 - **Holidays are per person, never the union of the team's countries.** `daysOffFor()` takes the person's own country, else `settings.countries[0]`. Unioning them would take US Thanksgiving off a Chilean engineer. With two or more countries, anyone without one raises a flag instead of being guessed silently.
 - **The Plan menu must close only itself.** The header kit's `⋯` overflow panel is also a `.header-menu`; the floorplan pattern of closing every `.header-menu.open` shut the panel the moment a menu inside it opened, and a dropdown nested in that panel is clipped by its scroll box anyway. So there is one menu, `data-keep-mobile` on its wrapper, and Undo/Redo are what fold away.
 - **Touch drags on a long press.** Rows and chips are `touch-action: pan-y` so a swipe scrolls the page; `dnd.js` starts a touch drag after 250ms still, then cancels `touchmove` (a non-passive listener) so the page holds. `touch-action: none` made the roster a dead zone for scrolling.
+- **CSV text cells that start with `=`, `+`, `-` or `@` get a leading apostrophe.** Excel and Sheets run them as formulas when a CSV is opened, and names come from whoever typed them. The .xlsx writes inline strings, which are never evaluated, so it needs no guard.
+- **The .xlsx is a stored (uncompressed) zip with fixed 1980 timestamps**, so the same plan gives the same bytes. `python3 -c "import zipfile; print(zipfile.ZipFile('plan.xlsx').testzip())"` checks every CRC; openpyxl in a scratch `--target` dir reads it back.
 - **Rounding is per person and the jumps are big.** Nearest Fibonacci turns 27 into 21 and 28 into 34, so one vacation week can drop someone 13 points. That is the model the brief asked for (32 -> 34); raw and planned are always shown side by side. Tests pin the boundary.
 - **The sprint cap is a ceiling** (`min(cap, focus days x points)`), not an override: a cap above what the focus days give changes nothing, and a flag says so.
 - **A fully away week costs no meeting day.** The meeting day comes out of each week that still has a working day; a day off on a weekend costs nothing.

@@ -91,8 +91,8 @@
           <button type="button" class="nav-link" id="planBtn" aria-haspopup="menu" aria-expanded="false">Plan ▾</button>
           <div class="header-menu" id="planMenu" role="menu" aria-label="Plan">
             <button type="button" role="menuitem" data-export="link">Copy share link</button>
-            <button type="button" role="menuitem" data-export="md-copy">Copy as Markdown</button>
-            <button type="button" role="menuitem" data-export="md">Download Markdown</button>
+            <button type="button" role="menuitem" data-action="export">Export tables and flags…</button>
+            <button type="button" role="menuitem" data-export="md">Download the report (Markdown)</button>
             <button type="button" role="menuitem" data-export="json">Download JSON</button>
             <button type="button" role="menuitem" data-action="import">Import a JSON plan…</button>
             <button type="button" role="menuitem" data-action="example">Load the example</button>
@@ -194,6 +194,7 @@
           <div class="panel-head">
             <h2 class="panel-title" id="flagsTitle">Flags</h2>
             <span class="panel-count" id="flagCount" role="status"></span>
+            <button type="button" class="panel-link" data-action="export" data-table="flags">Export</button>
           </div>
           <div class="flag-filters" id="flagFilters" role="group" aria-label="Filter flags"></div>
           <ol class="flag-list" id="flagList"></ol>
@@ -255,6 +256,31 @@
         <button type="button" class="btn btn--ghost btn--sm btn--quiet-danger modal__left" data-action="remove-person">Remove from team</button>
         <button type="button" class="btn btn--ghost" data-modal-close>Cancel</button>
         <button type="submit" class="btn btn--primary" form="personEdit">Save</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Export: pick a table, see it, take it out as a spreadsheet, CSV, a paste or Markdown -->
+  <div class="modal" id="exportModal" hidden>
+    <div class="modal__backdrop" data-modal-close tabindex="-1" aria-hidden="true"></div>
+    <div class="modal__dialog modal__dialog--wide export-dialog" role="dialog" aria-modal="true" aria-labelledby="exportTitle" tabindex="-1">
+      <header class="modal__header">
+        <h2 id="exportTitle">Export</h2>
+        <button type="button" class="btn btn--ghost btn--icon" data-modal-close aria-label="Close dialog">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </header>
+      <div class="modal__body export-body">
+        <div class="seg" id="exportTables" role="radiogroup" aria-label="Table"></div>
+        <p class="export-hint" id="exportHint"></p>
+        <div class="export-preview" id="exportPreview" tabindex="0" aria-label="Preview of the table"></div>
+        <p class="form-note">The spreadsheet holds every table on its own sheet, plus a Settings sheet with the numbers behind them. CSV and the copy buttons take the table shown above.</p>
+      </div>
+      <footer class="modal__footer export-actions">
+        <button type="button" class="btn btn--primary" data-export="xlsx">Download spreadsheet (.xlsx)</button>
+        <button type="button" class="btn btn--secondary" data-export="csv">Download CSV</button>
+        <button type="button" class="btn btn--secondary" data-export="tsv">Copy for Sheets or Excel</button>
+        <button type="button" class="btn btn--ghost" data-export="md-table">Copy as Markdown</button>
       </footer>
     </div>
   </div>

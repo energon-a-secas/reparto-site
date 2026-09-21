@@ -9,6 +9,7 @@ import { cal, countryName } from './holidays.js'
 import { planRange, fmtDay } from './calendar.js'
 import { computeFlags, CATEGORIES } from './flags.js'
 import { afterChange } from './render.js'
+import { exportTable } from './export-dialog.js'
 import { showToast, download, copyText, slug, plural, fmtPct } from './utils.js'
 
 const PREFIX = '#p='
@@ -97,7 +98,10 @@ export function toMarkdown(doc = state.doc) {
   return lines.join('\n')
 }
 
+const TABLE_EXPORTS = new Set(['xlsx', 'csv', 'tsv', 'md-table'])
+
 export async function runExport(kind) {
+  if (TABLE_EXPORTS.has(kind)) { exportTable(kind); return }
   const name = slug(state.doc.title)
   if (kind === 'json') { download(`${name}.json`, JSON.stringify(state.doc, null, 2), 'application/json'); return }
   if (kind === 'md') { download(`${name}.md`, toMarkdown(), 'text/markdown'); return }
