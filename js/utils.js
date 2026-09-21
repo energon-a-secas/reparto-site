@@ -1,43 +1,66 @@
 // ── Shared utilities ─────────────────────────────────────────
-// Small, pure helper functions used across multiple modules.
+// Small, pure helpers used across modules.
 
-/** Cached element lookup by ID. */
-const _els = {};
+/** Element by id. Re-looks-up an element that is no longer in the document. */
+const _els = {}
 export function $(id) {
-  return _els[id] || (_els[id] = document.getElementById(id));
+  const el = _els[id]
+  if (el && el.isConnected) return el
+  return (_els[id] = document.getElementById(id))
 }
 
-/** Escape HTML special characters. */
 export function escHtml(str) {
-  if (str === null || str === undefined) return '';
+  if (str === null || str === undefined) return ''
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
 }
 
-/** Show a temporary toast notification. */
-let _toastTimer = null;
+let _toastTimer = null
 export function showToast(msg) {
-  let el = document.getElementById('app-toast');
+  let el = document.getElementById('app-toast')
   if (!el) {
-    el = document.createElement('div');
-    el.id = 'app-toast';
-    el.className = 'toast';
-    document.body.appendChild(el);
+    el = document.createElement('div')
+    el.id = 'app-toast'
+    el.className = 'toast'
+    el.setAttribute('role', 'status')
+    document.body.appendChild(el)
   }
-  el.textContent = msg;
-  el.classList.add('visible');
-  clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => el.classList.remove('visible'), 2000);
+  el.textContent = msg
+  el.classList.add('visible')
+  clearTimeout(_toastTimer)
+  _toastTimer = setTimeout(() => el.classList.remove('visible'), 2600)
 }
 
-/** Simple debounce. */
-export function debounce(fn, ms) {
-  let timer;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), ms);
-  };
+export function initials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
 }
+
+// Face discs: eight hues at one lightness, keyed on the person's id so a
+// colour follows the person, never their position in the list. The name is
+// always printed beside the disc, so colour is never the only cue.
+const FACES = ['#0f766e', '#1d4ed8', '#7c3aed', '#b45309', '#be185d', '#15803d', '#0369a1', '#9f1239']
+export function faceColor(id) {
+  let h = 0
+  for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return FACES[h % FACES.length]
+}
+
+export const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`
+
+export function download(name, text, type = 'text/plain') {
+  const url = URL.createObjectURL(new Blob([text], { type }))
+  const a = Object.assign(document.createElement('a'), { href: url, download: name })
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+export async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true } catch { return false }
+}
+
+export const slug = s => String(s || 'plan').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'plan'

@@ -1,15 +1,22 @@
 // ── Entry point ──────────────────────────────────────────────
-// Import modules and initialize the app.
-// Keep this file under 50 lines: it only wires things together.
+// Load the plan (share link first, then the saved session, else the
+// example), paint it, wire the inputs. Nothing else lives here.
 
-import { state, loadSaved } from './state.js';
-import { render } from './render.js';
-import { bindEvents } from './events.js';
+import { loadSaved } from './state.js'
+import { renderAll, afterChange } from './render.js'
+import { bindEvents } from './events.js'
+import { loadFromHash } from './io.js'
+import { showToast } from './utils.js'
 
 function init() {
-  loadSaved(state);
-  render(state);
-  bindEvents(state);
+  loadSaved()
+  const shared = loadFromHash()
+  renderAll()
+  bindEvents()
+  if (shared) {
+    afterChange()
+    showToast('Opened a shared plan. Your own plan is one undo away')
+  }
 }
 
-init();
+init()

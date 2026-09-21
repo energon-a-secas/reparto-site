@@ -16,7 +16,8 @@
 
 :root {
   /* Per-site identity: set to this site's hub card accent (the accent table in .claude/HUB_REGISTRY.md) */
-  --accent: #0063e5;
+  --accent: #14b8a6;          /* Teal-500, the hub card accent */
+  --accent-bright: #2dd4bf;   /* Teal-400, one shade lighter */
 
   /* Site extras base.css does not define */
   --surface-toast: #1a1730;
@@ -30,6 +31,15 @@
   --z-sticky-header: 200;
   --z-modal: 400;
   --z-toast: 500;
+
+  /* Reparto: status inks (always paired with an icon and a word, never colour alone)
+     and a solid surface for the popover, which floats over translucent cards. */
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --err: #fb7185;
+  --info: #93c5fd;
+  --surface-solid: #0c1122;
+  --z-pop: 450;
 }
 
 /* Author display values (e.g. .section/.stack flex) would otherwise defeat the

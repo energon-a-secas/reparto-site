@@ -9,16 +9,16 @@
   <meta name="apple-mobile-web-app-title" content="Reparto">
   <link rel="manifest" href="/site.webmanifest">
   <meta name="neo-mark" content="on">
-  <title>Reparto | Short Descriptor</title>
-  <meta name="description" content="Under 155 chars, no trailing period, active verbs">
-  <meta property="og:title" content="Reparto | Short Descriptor">
-  <meta property="og:description" content="One punchy line, same tone as meta description">
+  <title>Reparto | Sprint Capacity Planner</title>
+  <meta name="description" content="Drag people onto deliverables, size the work on the Fibonacci scale, and see who is missing before the quarter starts. Runs in your browser">
+  <meta property="og:title" content="Reparto | Sprint Capacity Planner">
+  <meta property="og:description" content="Split a quarter of story points across people and deliverables, and flag every gap before planning day">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://reparto.neorgon.com/">
   <meta property="og:site_name" content="Neorgon">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Reparto | Short Descriptor">
-  <meta name="twitter:description" content="One punchy line">
+  <meta name="twitter:title" content="Reparto | Sprint Capacity Planner">
+  <meta name="twitter:description" content="Split a quarter of story points across people and deliverables, and flag every gap before planning day">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://reparto.neorgon.com/">
   <meta property="og:locale" content="en_US">
@@ -33,6 +33,7 @@
   <!-- Fleet design tokens: canonical, do not redeclare locally (docs/references/new-project-context.md, Design) -->
   <link rel="stylesheet" href="https://cdn.neorgon.org/v1.0.0/styles/base.css">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/app.css">
   <!-- Neorgon Header Kit (vendored; ?header=live swaps CSS to CDN). Keep after style.css, the kit owns the header. -->
   <script>(function(){var m=location.search.match(/[?&]theme=([\w-]+)/)||document.cookie.match(/(?:^|;\s*)neo_theme=([\w-]+)/);if(m&&m[1]!=='default')document.documentElement.dataset.theme=decodeURIComponent(m[1]);})();</script>
   <link rel="stylesheet" href="css/neorgon-header.css">
@@ -57,9 +58,9 @@
     "@context": "https://schema.org",
     "@type": "WebApplication",
     "name": "Reparto",
-    "description": "DESCRIPTION",
+    "description": "Sprint capacity planner: drag people onto deliverables, size work on the Fibonacci scale, and flag missing estimates, missing people and over-booked engineers",
     "url": "https://reparto.neorgon.com/",
-    "applicationCategory": "DeveloperApplication",
+    "applicationCategory": "BusinessApplication",
     "operatingSystem": "Any",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
     "author": { "@type": "Organization", "name": "Neorgon", "url": "https://neorgon.com/" }
@@ -70,46 +71,40 @@
 
   <a class="skip-link" href="#main">Skip to content</a>
 
-  <!-- Neorgon Header Kit contract (packages/neorgon-ui/header/README.md).
-       data-header-mode: hub (glass) | content (sticky gradient) | app (slim, auto-hides on scroll).
-       Pick content for learning/content sites, app for tool-dense sites. -->
-  <header class="header-bar" data-header-mode="content">
+  <header class="header-bar" data-header-mode="app">
     <div class="header-logo">
-      <!-- PATTERN: one link: mark + name go to THIS site's home (root or #home)
-           so clicking either resets the view. The planet icon in .header-right
-           is the only header link to neorgon.com. -->
       <a href="./" class="header-title-link">
         <img src="https://cdn.neorgon.org/v1.0.0/energon-classic-logo.png" class="header-logo-img" alt="">
         <div class="header-title-wrap">
-          <h1>Project Name</h1>
-          <div class="header-subtitle">One-line description</div>
+          <h1>Reparto</h1>
+          <div class="header-subtitle">Split a quarter's points, see who is missing</div>
         </div>
       </a>
     </div>
 
-    <!-- .header-right owns margin-left:auto; home icon is always last. -->
     <div class="header-right">
-      <!-- Action buttons (omit .header-actions entirely if the site has none).
-           Mark the 1–2 primary controls with data-keep-mobile, everything else
-           collapses into the ⋯ overflow menu at ≤700px (handled by neorgon-header.js).
       <div class="header-actions">
-        <button class="btn btn--ghost btn--sm" id="someFeatureBtn" data-keep-mobile>Feature</button>
-        <button class="btn btn--ghost btn--sm" id="secondaryBtn">Secondary</button>
+        <button type="button" class="nav-link" id="undoBtn" data-action="undo" title="Undo (Ctrl+Z)" data-keep-mobile disabled>Undo</button>
+        <button type="button" class="nav-link" id="redoBtn" data-action="redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+        <div class="menu-wrap">
+          <button type="button" class="nav-link" id="planBtn" aria-haspopup="menu" aria-expanded="false">Plan ▾</button>
+          <div class="header-menu" id="planMenu" role="menu">
+            <button type="button" role="menuitem" data-action="example">Load the example (6 people, 7 deliverables)</button>
+            <button type="button" role="menuitem" data-action="blank">Start a blank plan</button>
+            <button type="button" role="menuitem" data-action="import">Import a JSON plan…</button>
+            <button type="button" role="menuitem" data-action="help">How the numbers work</button>
+          </div>
+        </div>
+        <div class="menu-wrap">
+          <button type="button" class="nav-link" id="exportBtn" aria-haspopup="menu" aria-expanded="false">Export ▾</button>
+          <div class="header-menu" id="exportMenu" role="menu">
+            <button type="button" role="menuitem" data-export="link">Copy share link</button>
+            <button type="button" role="menuitem" data-export="md-copy">Copy as Markdown</button>
+            <button type="button" role="menuitem" data-export="md">Download Markdown</button>
+            <button type="button" role="menuitem" data-export="json">Download JSON</button>
+          </div>
+        </div>
       </div>
-      -->
-
-      <!-- Accounts (only for a site with sign-in): the Neorgon Auth Kit renders a "Sign in"
-           button in this slot, and Clerk's avatar menu once signed in. It also owns the
-           sign-in dialog, so there is no panel or modal to write. Vendor it with
-           packages/neorgon-ui/sync-auth.sh (its header shows how to adopt one site), then add
-             <meta name="clerk-publishable-key" content="pk_live_...">
-             <link rel="stylesheet" href="css/neorgon-auth.css">
-           to <head>, and in js/events.js:
-             import { NeoAuth } from './neorgon-auth.js';
-             NeoAuth.onChange(({ signedIn, label }) => ...); NeoAuth.start({ convex });
-           Contract, CSP and gated actions: packages/neorgon-ui/auth/README.md
-      <div class="neo-auth" data-neo-auth data-keep-mobile hidden></div>
-      -->
 
       <a class="header-home" href="https://neorgon.com/" title="neorgon.com" aria-label="Neorgon home">
         <svg class="nh-hub-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -125,94 +120,129 @@
     </div>
   </header>
 
-  <!-- Main content: replace with your app's HTML structure -->
-  <!-- Two layouts ship here. `.container` is the centred single column, right
-       for reading-first pages. `.shell` is the side-rail layout, right for a
-       tool with sections you switch between: it moves the nav into the left
-       gutter on desktop and collapses to a scrollable row below 940px.
-
-         <div class="shell">
-           <nav class="shell__rail" aria-label="Section">…</nav>
-           <div class="shell__main stack stack--loose">…</div>
-         </div>
-  -->
   <main id="main">
-    <div class="container stack">
-      <section class="section" aria-labelledby="template-overview-title">
-        <div class="section__header">
-          <div class="section__titles">
-            <h2 class="section__title" id="template-overview-title">Template UI kit</h2>
-            <p class="section__lead">
-              Sections use <code>.section</code> + <code>.stack</code> for rhythm.
-              Cards are calm by default; add <code>.card--interactive</code> only for hover lift.
-              Blocking overlays use <code>.modal</code>; a <strong>sheet</strong> (no backdrop) keeps context for filters and compact forms.
-              Sign-in is neither: the Auth Kit owns its own dialog.
-            </p>
-          </div>
-          <div class="toolbar">
-            <button type="button" class="btn btn--secondary btn--sm" id="openDemoModal">Open modal</button>
-            <a class="btn btn--ghost btn--sm" href="https://neorgon.com/" target="_blank" rel="noopener noreferrer">Ghost link</a>
-          </div>
-        </div>
+    <div class="plan">
 
-        <div class="stack stack--tight">
-          <div class="card">
-            <p class="section__lead" style="margin:0;">
-              Default card: subtle border/shadow on hover, no floaty lift. Use for dense forms and content.
-            </p>
-          </div>
-          <div class="card card--interactive">
-            <p class="section__lead" style="margin:0;">
-              Interactive card: reserved for primary surfaces you want to feel tactile (hero picks, featured modules).
-            </p>
-          </div>
+      <section class="calc" id="calc" aria-labelledby="calcTitle">
+        <div class="calc-head">
+          <h2 class="calc-title" id="calcTitle">One engineer's capacity</h2>
+          <p class="calc-lead" id="calcLead"></p>
         </div>
+        <div class="calc-chain" id="calcChain"></div>
       </section>
 
-      <section class="section" aria-labelledby="template-buttons-title">
-        <div class="section__titles">
-          <h2 class="section__title" id="template-buttons-title">Buttons</h2>
-          <p class="section__lead">Canonical classes: <code>.btn</code> + <code>.btn--primary</code>, <code>.btn--secondary</code>, <code>.btn--ghost</code>, <code>.btn--danger</code>, plus optional <code>.btn--sm</code>, <code>.btn--block</code>, or <code>.btn--icon</code>.</p>
+      <section class="tiles" id="tiles" aria-label="Plan totals"></section>
+
+      <div class="workspace">
+        <!-- Roster and board share their own grid, so the sticky roster is bounded
+             by the board and cannot slide over the flags when they stack below. -->
+        <div class="workspace-main">
+        <aside class="roster" id="roster" data-drop="roster" aria-labelledby="rosterTitle">
+          <div class="panel-head">
+            <h2 class="panel-title" id="rosterTitle">Team</h2>
+            <span class="panel-count" id="rosterCount"></span>
+          </div>
+          <ul class="roster-list" id="rosterList"></ul>
+          <form class="roster-add" id="personForm" autocomplete="off">
+            <input class="field" id="personName" name="name" placeholder="Name" aria-label="New person's name" maxlength="80">
+            <input class="field" id="personRole" name="role" placeholder="Role" aria-label="New person's role" maxlength="80">
+            <button type="submit" class="btn btn--secondary btn--sm">Add</button>
+          </form>
+          <p class="panel-tip">Drag a person onto a deliverable. Or click them, then click the deliverable. Drop a share back here to remove it.</p>
+        </aside>
+
+        <section class="board" aria-labelledby="boardTitle">
+          <div class="board-head">
+            <h2 class="sr-only" id="boardTitle">Deliverables</h2>
+            <input class="plan-title" id="planTitle" data-key="plan-title" aria-label="Plan name" maxlength="80">
+            <button type="button" class="btn btn--secondary btn--sm" data-action="add-deliverable">Add deliverable</button>
+          </div>
+          <div class="carry-bar" id="carryBar" role="status" hidden></div>
+          <div class="board-grid" id="board"></div>
+        </section>
         </div>
-        <div class="toolbar">
-          <button type="button" class="btn btn--primary">Primary</button>
-          <button type="button" class="btn btn--secondary">Secondary</button>
-          <button type="button" class="btn btn--ghost">Ghost</button>
-          <button type="button" class="btn btn--danger">Danger</button>
-          <button type="button" class="btn btn--primary btn--sm">Small primary</button>
-          <button type="button" class="btn btn--ghost btn--icon" aria-label="Settings">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-          </button>
-        </div>
-      </section>
+
+        <aside class="flags" aria-labelledby="flagsTitle">
+          <div class="panel-head">
+            <h2 class="panel-title" id="flagsTitle">Flags</h2>
+            <span class="panel-count" id="flagCount"></span>
+          </div>
+          <div class="flag-filters" id="flagFilters" role="group" aria-label="Filter flags"></div>
+          <ol class="flag-list" id="flagList" aria-live="polite"></ol>
+          <button type="button" class="flag-more" id="flagMore" data-action="toggle-info" hidden></button>
+        </aside>
+      </div>
     </div>
   </main>
 
-  <!-- Modal: blocking overlay (confirmations, legal). Sheets = .sheet under the header. -->
-  <div class="modal" id="demoModal" hidden>
+  <!-- Anchored popover for the estimate and share pickers (built by js/popover.js). -->
+  <div class="pop" id="pop" role="dialog" aria-modal="false" hidden></div>
+
+  <!-- Person editor -->
+  <div class="modal" id="personModal" hidden>
     <div class="modal__backdrop" data-modal-close tabindex="-1" aria-hidden="true"></div>
-    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="demoModalTitle" tabindex="-1">
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="personModalTitle" tabindex="-1">
       <header class="modal__header">
-        <h2 id="demoModalTitle">Example modal</h2>
+        <h2 id="personModalTitle">Edit person</h2>
         <button type="button" class="btn btn--ghost btn--icon" data-modal-close aria-label="Close dialog">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </header>
-      <div class="modal__body">
-        Use modals for blocking tasks. Sheets (<code>.sheet</code>, collapsible rows under the header) keep context visible for filters and compact forms.
-      </div>
+      <form class="modal__body person-form" id="personEdit" autocomplete="off">
+        <label class="lbl">Name <input class="field" name="name" maxlength="80"></label>
+        <label class="lbl">Role <input class="field" name="role" maxlength="80"></label>
+        <div class="form-row">
+          <label class="lbl">Load on this team
+            <select class="field" name="load">
+              <option value="100">100%</option><option value="80">80%</option><option value="75">75%</option>
+              <option value="60">60%</option><option value="50">50%</option><option value="40">40%</option>
+              <option value="25">25%</option><option value="20">20%</option>
+            </select>
+          </label>
+          <label class="lbl">Sprints away
+            <select class="field" name="sprintsOff"></select>
+          </label>
+        </div>
+        <label class="check"><input type="checkbox" name="open"> Open role: counted in capacity, flagged until hired</label>
+        <p class="form-note" id="personCapNote"></p>
+      </form>
       <footer class="modal__footer">
+        <button type="button" class="btn btn--danger btn--sm modal__left" data-action="remove-person">Remove from team</button>
         <button type="button" class="btn btn--ghost" data-modal-close>Cancel</button>
-        <button type="button" class="btn btn--primary" data-modal-close>Done</button>
+        <button type="submit" class="btn btn--primary" form="personEdit">Save</button>
       </footer>
     </div>
   </div>
 
-  <!-- Neorgon Footer Kit contract. data-footer-mode: minimal (default) | content | app.
-       Replace the copy with a real note (privacy, data provenance, disclaimer) or drop
-       the text entirely, the kit appends "Part of Neorgon" and any version stamps. -->
-  <footer class="neo-footer" data-footer-mode="minimal">
-    Runs entirely in your browser.
+  <!-- How the numbers work -->
+  <div class="modal" id="helpModal" hidden>
+    <div class="modal__backdrop" data-modal-close tabindex="-1" aria-hidden="true"></div>
+    <div class="modal__dialog modal__dialog--wide" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle" tabindex="-1">
+      <header class="modal__header">
+        <h2 id="helpModalTitle">How the numbers work</h2>
+        <button type="button" class="btn btn--ghost btn--icon" data-modal-close aria-label="Close dialog">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </header>
+      <div class="modal__body help">
+        <p><strong>A story point is one focus day.</strong> A week has five working days; with the meeting day on, one of them goes to ceremonies and does not count, so a week holds four points and a two-week sprint holds eight.</p>
+        <p><strong>A plan is a number of sprints.</strong> A full quarter is six; two months is four. One engineer's plan is points a sprint times sprints: 8 × 4 = 32.</p>
+        <p><strong>Capacity lands on the Fibonacci scale</strong>, the same scale the work is sized on, so 32 becomes 34 and 48 becomes 55. Pick <em>Fibonacci below</em> for a safer plan, where 32 becomes 21. The raw number is always shown next to the rounded one.</p>
+        <p><strong>Load and sprints away</strong> scale one person: half-time on this team over four sprints is 16 raw, 13 planned. <strong>Buffer</strong> holds back a share of everyone for support and unplanned work.</p>
+        <p><strong>A share</strong> is the points a person gives one deliverable. Dropping someone on a deliverable gives it what they have free, up to what it still needs. Click the number on a share to change it.</p>
+        <h3>Keys</h3>
+        <ul class="keys">
+          <li><kbd>Enter</kbd> on a person or a share picks it up; <kbd>Enter</kbd> on a deliverable drops it there; <kbd>Esc</kbd> puts it back</li>
+          <li><kbd>Ctrl</kbd> <kbd>Z</kbd> undo, <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> redo</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="importFile" accept="application/json,.json" hidden>
+
+  <footer class="neo-footer" data-footer-mode="app">
+    Your plan stays in this browser. A share link carries it inside the link, never through a server.
   </footer>
 
   <script type="module" src="js/app.js"></script>
