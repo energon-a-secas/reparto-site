@@ -220,7 +220,7 @@
               <option value="25">25%</option><option value="20">20%</option>
             </select>
           </label>
-          <label class="lbl">Whole sprints away
+          <label class="lbl">Sprints away
             <select class="field" name="sprintsOff"></select>
           </label>
         </div>
@@ -255,9 +255,9 @@
       </header>
       <div class="modal__body help">
         <p><strong>A story point is one focus day.</strong> A week has five working days; with the meeting day on, one of them goes to ceremonies and does not count, so a week holds four points and a two-week sprint holds eight.</p>
-        <p><strong>A plan is a number of sprints.</strong> A full quarter is six; two months is four. One engineer's plan is points a sprint times sprints: 8 × 4 = 32.</p>
+        <p><strong>A plan is a number of sprints.</strong> A quarter holds six two-week sprints; when two months of it go to planned work, the plan is four. One engineer's plan is points a sprint times sprints: 8 × 4 = 32.</p>
         <p><strong>Capacity lands on the Fibonacci scale</strong>, the same scale the work is sized on, so 32 becomes 34 and 48 becomes 55. Pick <em>Fibonacci below</em> for a safer plan, where 32 becomes 21. The raw number is always shown next to the rounded one.</p>
-        <p><strong>Load and sprints away</strong> scale one person: half-time on this team over four sprints is 16 raw, 13 planned. <strong>Buffer</strong> holds back a share of everyone for support and unplanned work.</p>
+        <p><strong>Load and sprints away</strong> scale one person: half-time on this team over four sprints is 16 raw, 13 planned. <strong>Buffer</strong> holds back a percentage of everyone's capacity for support and unplanned work.</p>
         <p><strong>The calendar takes days out.</strong> Sprints start on the date you pick. Public holidays come from the country you choose for the team (anyone can have their own), team days off apply to everyone, and vacations belong to one person. A day off only costs a focus day when it lands on a working day, and a week someone spends entirely away costs no meeting day either.</p>
         <p><strong>A share</strong> is the points a person gives one deliverable. Dropping someone on a deliverable gives it what they have free, up to what it still needs. Click the number on a share to change it.</p>
         <h3>Keys</h3>
@@ -272,7 +272,7 @@
   <input type="file" id="importFile" accept="application/json,.json" hidden>
 
   <footer class="neo-footer" data-footer-mode="app">
-    Your plan stays in this browser; a share link carries it inside the link. Public holidays from <a href="https://github.com/commenthol/date-holidays" rel="noopener">date-holidays</a> (CC BY 3.0).
+    Your plan stays in this browser; a share link carries it in the URL itself. Public holidays from <a href="https://github.com/commenthol/date-holidays" rel="noopener">date-holidays</a> (CC BY 3.0).
   </footer>
 
   <script type="module" src="js/app.js"></script>

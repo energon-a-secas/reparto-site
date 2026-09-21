@@ -10,6 +10,8 @@
 
 import { analyze, asEngineers } from './capacity.js'
 
+const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`
+
 export const CATEGORIES = {
   data: 'Missing data',
   people: 'Missing people',
@@ -23,17 +25,22 @@ const SOLO_FROM = 21        // a deliverable this big on one person stalls on on
 
 const pts = n => `${n} pt${n === 1 ? '' : 's'}`
 
-function engineers(points, unit) {
+/** "about 0.6 of an engineer", "about one engineer", "about 1.5 engineers". Shared with the cards and tiles. */
+export function engineers(points, unit) {
   const e = asEngineers(points, unit)
   if (e >= 1.05) return `about ${e} engineers`
   if (e >= 0.95) return 'about one engineer'
   return `about ${e} of an engineer`
 }
 
+// Country names in English whatever the browser's language, like the rest of the page.
+const REGION = typeof Intl !== 'undefined' && Intl.DisplayNames ? new Intl.DisplayNames(['en'], { type: 'region' }) : null
+const countryLabel = code => { try { return REGION?.of(code) || code } catch { return code } }
+
 export function computeFlags(doc, a = analyze(doc)) {
   const out = []
   const add = (level, cat, text, target = null, fix) => out.push({ level, cat, text, target, fix, id: `${cat}-${out.length}` })
-  const nameOf = new Map(doc.people.map(p => [p.id, p.name.trim() || 'Unnamed person']))
+  const nameOf = new Map(doc.people.map(p => [p.id, p.name.trim() || 'Unnamed']))
   const openIds = new Set(doc.people.filter(p => p.open).map(p => p.id))
 
   // Who has the most room, for the "assign" fixes. Open roles go last.
@@ -44,27 +51,27 @@ export function computeFlags(doc, a = analyze(doc)) {
 
   // ── Settings ──
   if (doc.settings.sprintCap > 0 && doc.settings.sprintCap > a.derived) {
-    add('warn', 'data', `The sprint cap of ${pts(doc.settings.sprintCap)} is more than ${a.focus} focus days allow (${pts(a.derived)}).`, { kind: 'settings', ids: [] })
+    add('warn', 'data', `The sprint cap of ${pts(doc.settings.sprintCap)} is above what the focus days give (${pts(a.derived)} a sprint), so it changes nothing.`, { kind: 'settings', ids: [] })
   }
-  if (!a.unit) add('error', 'data', 'The settings leave no capacity at all: check focus days and sprints.', { kind: 'settings', ids: [] })
+  if (!a.unit) add('error', 'data', 'The capacity formula comes to zero: check focus days and sprints.', { kind: 'settings', ids: [] })
 
   // ── Calendar ──
   for (const c of a.calendar.failed) {
-    add('warn', 'data', `Public holidays for ${c} could not be loaded, so none are counted there. Add them as team days off.`, { kind: 'settings', ids: [] })
+    add('warn', 'data', `Could not load ${countryLabel(c)}'s public holidays, so none are taken out. Add them as team days off.`, { kind: 'settings', ids: [] })
   }
   if (!doc.settings.country && doc.people.some(p => !p.country)) {
-    add('info', 'data', 'No holiday calendar is set, so public holidays are not taken out. Pick a country under the formula.', { kind: 'settings', ids: [] })
+    add('info', 'data', 'No public holidays are taken out: pick a country under Public holidays.', { kind: 'settings', ids: [] })
   }
   const away = doc.people.filter(p => a.people.get(p.id).lost.vacation > 0)
   if (away.length) {
-    add('info', 'load', `Vacations in this plan: ${away.map(p => `${nameOf.get(p.id)} ${a.people.get(p.id).lost.vacation} days`).join(', ')}.`,
+    add('info', 'load', `Vacations in this plan: ${away.map(p => `${nameOf.get(p.id)} ${plural(a.people.get(p.id).lost.vacation, 'day')}`).join(', ')}.`,
       { kind: 'person', ids: away.map(p => p.id) })
   }
 
   // ── Deliverables ──
   for (const d of doc.deliverables) {
     const t = { kind: 'deliverable', ids: [d.id] }
-    const label = d.name.trim() || 'An untitled deliverable'
+    const label = d.name.trim() || 'Untitled deliverable'
     const da = a.deliverables.get(d.id)
     if (!d.name.trim()) add('warn', 'data', 'A deliverable has no name.', t)
     if (!d.estimate) add('error', 'data', `${label} has no estimate. Size it on the Fibonacci scale.`, t, { action: 'size', arg: d.id, label: 'Size it' })
@@ -84,7 +91,7 @@ export function computeFlags(doc, a = analyze(doc)) {
       add('warn', 'people', `${label} relies on ${open.map(m => nameOf.get(m.person)).join(' and ')}, not hired yet.`, t)
     }
     if (a.unit && d.estimate > a.unit) {
-      add('warn', 'practice', `${label} (${d.estimate}) is bigger than one engineer's whole plan (${a.unit}). Split it, or staff it on purpose.`, t)
+      add('warn', 'practice', `${label} (${pts(d.estimate)}) is bigger than one engineer's whole plan (${pts(a.unit)}). Split it, or put more than one person on it.`, t)
     }
   }
 
@@ -94,20 +101,20 @@ export function computeFlags(doc, a = analyze(doc)) {
     const t = { kind: 'person', ids: [p.id] }
     const name = nameOf.get(p.id)
     if (!p.name.trim()) add('warn', 'data', 'Someone on the team has no name.', t)
-    if (!pa.cap) add('warn', 'data', `${name} has no capacity in this plan (load or sprints off).`, t)
+    if (!pa.cap) add('warn', 'data', `${name} has no capacity in this plan (load or sprints away).`, t)
     if (pa.free < 0) add('error', 'load', `${name} is booked ${pa.used} of ${pts(pa.cap)}, ${-pa.free} over.`, t)
     if (pa.count > SPREAD_LIMIT) add('warn', 'practice', `${name} is split across ${pa.count} deliverables. Every switch costs focus.`, t)
   }
 
   const idle = doc.people.filter(p => a.people.get(p.id).free > 0 && a.people.get(p.id).cap > 0)
   if (idle.length) {
-    const list = idle.map(p => `${nameOf.get(p.id)} ${a.people.get(p.id).free}`).join(', ')
-    add('info', 'load', `Unassigned capacity: ${list}.`, { kind: 'person', ids: idle.map(p => p.id) })
+    const list = idle.map(p => `${nameOf.get(p.id)} ${pts(a.people.get(p.id).free)}`).join(', ')
+    add('info', 'load', `Free capacity: ${list}.`, { kind: 'person', ids: idle.map(p => p.id) })
   }
 
   const solo = doc.deliverables.filter(d => d.members.length === 1 && (d.estimate || 0) >= SOLO_FROM)
   if (solo.length) {
-    add('info', 'practice', `${solo.length === 1 ? 'One deliverable rests' : `${solo.length} deliverables rest`} on a single person: ${solo.map(d => d.name.trim() || 'untitled').join(', ')}.`,
+    add('info', 'practice', `${solo.length === 1 ? 'One deliverable rests' : `${solo.length} deliverables rest`} on a single person: ${solo.map(d => d.name.trim() || 'Untitled deliverable').join(', ')}.`,
       { kind: 'deliverable', ids: solo.map(d => d.id) })
   }
 

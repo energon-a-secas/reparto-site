@@ -40,7 +40,7 @@ export function openPerson(id) {
   const load = f.elements.load
   if (![...load.options].some(o => Number(o.value) === p.load)) load.insertAdjacentHTML('beforeend', `<option value="${p.load}">${p.load}%</option>`)
   load.value = String(p.load)
-  f.elements.country.innerHTML = countryOptions(p.country, s.country ? `Team calendar (${countryName(s.country)})` : 'Team calendar (none set)')
+  f.elements.country.innerHTML = countryOptions(p.country, s.country ? `Same as the team (${countryName(s.country)})` : 'Same as the team (none set)')
   f.elements.country.value = p.country
   f.elements.open.checked = p.open
   $('vacList').innerHTML = ''

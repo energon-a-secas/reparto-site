@@ -9,7 +9,7 @@ import { cal, countryName } from './holidays.js'
 import { planRange, fmtDay } from './calendar.js'
 import { computeFlags, CATEGORIES } from './flags.js'
 import { afterChange } from './render.js'
-import { showToast, download, copyText, slug } from './utils.js'
+import { showToast, download, copyText, slug, plural } from './utils.js'
 
 const PREFIX = '#p='
 
@@ -44,9 +44,9 @@ export async function importFile(file) {
     const doc = normalizeDoc(JSON.parse(await file.text()))
     resetTo(doc)
     afterChange()
-    showToast(`Imported ${doc.title}: ${doc.people.length} people, ${doc.deliverables.length} deliverables`)
+    showToast(`Imported ${doc.title}: ${plural(doc.people.length, 'person', 'people')}, ${plural(doc.deliverables.length, 'deliverable')}`)
   } catch (err) {
-    showToast(`Could not import: ${err.message}`)
+    showToast(err instanceof SyntaxError ? 'Could not import: that file is not valid JSON' : 'Could not import: that file is not a Reparto plan')
   }
 }
 
@@ -60,7 +60,7 @@ export function toMarkdown(doc = state.doc) {
   const lines = [
     `# ${doc.title}`,
     '',
-    `**One engineer:** ${s.weeksPerSprint}-week sprints × ${a.focus} focus days a week × ${s.pointsPerDay} pt = ${a.sprint} pts a sprint; × ${s.sprints} sprints = ${a.base}${a.offPts ? ` − ${a.offPts} for ${a.offDays} days off` : ''}${s.buffer ? `, ${s.buffer}% buffer` : ''} = ${+a.unitRaw.toFixed(1)}, planned as **${a.unit}** (${ROUNDING[s.rounding]}).`,
+    `**One engineer:** ${s.weeksPerSprint}-week sprints × ${a.focus} focus days a week × ${s.pointsPerDay} pt = ${a.sprint} pts a sprint; × ${s.sprints} sprints = ${a.base}${a.offPts ? ` − ${a.offPts} for ${plural(a.offDays, 'day')} off` : ''}${s.buffer ? `, ${s.buffer}% buffer` : ''} = ${+a.unitRaw.toFixed(1)}, planned as **${a.unit}** (${ROUNDING[s.rounding]}).`,
     '',
     `**Calendar:** starts ${fmtDay(s.startDate, true)}${range ? `, ends ${fmtDay(range.last, true)}` : ''} · public holidays: ${s.country ? countryName(s.country) : 'none'}${doc.daysOff.length ? ` · team days off: ${doc.daysOff.map(t => `${fmtDay(t.date)} ${t.label}`).join(', ')}` : ''}`,
     '',
@@ -82,7 +82,7 @@ export function toMarkdown(doc = state.doc) {
     '|---|---|---|---:|---:|---:|',
     ...doc.people.map(p => {
       const pa = a.people.get(p.id)
-      const off = [pa.lost.holiday && `${pa.lost.holiday} holiday`, pa.lost.team && `${pa.lost.team} team`, pa.lost.vacation && `${pa.lost.vacation} vacation`, pa.away && `${pa.away} sprint away`].filter(Boolean).join(', ') || 'none'
+      const off = [pa.lost.holiday && `${pa.lost.holiday} holiday`, pa.lost.team && `${pa.lost.team} team`, pa.lost.vacation && `${pa.lost.vacation} vacation`, pa.away && `${plural(pa.away, 'sprint')} away`].filter(Boolean).join(', ') || 'none'
       return `| ${cell(p.name || 'Unnamed')}${p.open ? ' (open role)' : ''} | ${cell(p.role) || 'none'} | ${off} | ${pa.cap} | ${pa.used} | ${pa.free} |`
     }),
   ]

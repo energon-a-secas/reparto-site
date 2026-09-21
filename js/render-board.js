@@ -4,8 +4,7 @@
 //   data-drop="deliverable" data-deliv | data-drop="roster"   drop target
 
 import { state, ui } from './state.js'
-import { flagIndex } from './flags.js'
-import { asEngineers } from './capacity.js'
+import { flagIndex, engineers } from './flags.js'
 import { $, escHtml, initials, faceColor, plural } from './utils.js'
 
 const X_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>'
@@ -39,7 +38,7 @@ export function renderRoster(a, flags) {
     const pa = a.people.get(p.id)
     const pct = pa.cap ? Math.min(100, (pa.used / pa.cap) * 100) : 0
     const band = pa.free < 0 ? 'over' : pa.free === 0 && pa.cap ? 'full' : 'free'
-    const bits = [p.role && escHtml(p.role), p.load < 100 && `${p.load}%`, p.sprintsOff && `${p.sprintsOff} away`,
+    const bits = [p.role && escHtml(p.role), p.load < 100 && `${p.load}%`, p.sprintsOff && plural(p.sprintsOff, 'sprint') + ' away',
       pa.lost.vacation && `${pa.lost.vacation}d vacation`, p.country && p.country !== state.doc.settings.country && p.country].filter(Boolean).join(' · ')
     const carried = ui.carry?.person === p.id && !ui.carry.from
     return `<li class="person person--${band}${p.open ? ' person--open' : ''}${carried ? ' is-carried' : ''}${focused(p.id) ? ' is-focus' : ''}"
@@ -65,7 +64,7 @@ const fmt = n => (Number.isInteger(n) ? String(n) : n.toFixed(1))
 function status(d, da, a) {
   if (!d.estimate) return { cls: 'unsized', icon: '?', text: da.got ? `Unsized · ${da.got} pts booked` : 'Unsized: pick a Fibonacci size' }
   if (!d.members.length) return { cls: 'empty', icon: '!', text: `Nobody on it · needs ${d.estimate}` }
-  if (da.gap > 0) return { cls: 'short', icon: '!', text: `Short ${da.gap} · about ${asEngineers(da.gap, a.unit)} engineers` }
+  if (da.gap > 0) return { cls: 'short', icon: '!', text: `Short ${da.gap} · ${engineers(da.gap, a.unit)}` }
   if (da.gap < 0) return { cls: 'over', icon: '↑', text: `${-da.gap} over the estimate` }
   return { cls: 'ok', icon: '✓', text: 'Staffed' }
 }
@@ -127,7 +126,7 @@ export function renderBoard(a, flags) {
       ${d.members.length ? '' : '<p class="drop-hint">Drop people here</p>'}
       ${dropBtn}
       <footer class="deliv-foot">
-        <span>${d.estimate ? `${fmt(d.estimate / (a.sprint || 1))} engineer-sprints` : 'Not sized'} · ${da.got} booked</span>
+        <span>${d.estimate ? `${fmt(d.estimate / (a.sprint || 1))} engineer-sprints` : 'Unsized'} · ${da.got} booked</span>
         <button type="button" class="icon-btn" data-action="remove-deliverable" data-id="${d.id}" aria-label="Remove ${escHtml(name)}">${TRASH_ICON}</button>
       </footer>
     </article>`

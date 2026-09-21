@@ -65,7 +65,7 @@ export function openEstimate(delivId) {
   const d = deliverable(delivId); if (!d) return
   const s = state.doc.settings
   const scale = [null, ...SCALE].map(v =>
-    `<button type="button" class="scale-btn" data-pick="${v ?? ''}" aria-pressed="${d.estimate === v}" aria-label="${v ? `${v} points` : 'Not sized'}">${v ?? '?'}</button>`
+    `<button type="button" class="scale-btn" data-pick="${v ?? ''}" aria-pressed="${d.estimate === v}" aria-label="${v ? `${v} points` : 'Unsized'}">${v ?? '?'}</button>`
   ).join('')
   const pop = open(`de-${delivId}`, `${head(d.name.trim() || 'Size this deliverable')}
     <div class="scale" role="group" aria-label="Fibonacci scale">${scale}</div>

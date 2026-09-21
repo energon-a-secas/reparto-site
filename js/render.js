@@ -4,8 +4,8 @@
 // diffing; the focused control is found again by its data-key.
 
 import { state, ui, saveState, canUndo, canRedo } from './state.js'
-import { analyze, horizons, ROUNDING, asEngineers } from './capacity.js'
-import { computeFlags } from './flags.js'
+import { analyze, horizons, ROUNDING } from './capacity.js'
+import { computeFlags, engineers } from './flags.js'
 import { renderRoster, renderBoard } from './render-board.js'
 import { renderFlags } from './render-flags.js'
 import { renderCalendar } from './render-calendar.js'
@@ -142,7 +142,7 @@ function renderTiles(a) {
     a.shortfall
       ? tile({
           label: 'Missing people', value: a.shortfall, unit: 'pts short',
-          sub: `on ${plural(shortOn, 'deliverable')}: about ${asEngineers(a.shortfall, a.unit)} engineers at ${a.unit} pts each`,
+          sub: `on ${plural(shortOn, 'deliverable')}: ${engineers(a.shortfall, a.unit)}`,
           status: 'error',
         })
       : d.deliverables.some(x => x.estimate)
