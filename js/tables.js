@@ -10,9 +10,16 @@
 import { shareKey, ROUNDING } from './capacity.js'
 import { planRange, fmtDay, lastWorkday } from './calendar.js'
 import { deliverableStatus, statusText } from './flags.js'
+import { PRIORITIES, PROGRESS, BOX_COLORS, priorityOf, progressOf, boxColorOf } from './planning.js'
 
 const round1 = n => Math.round(n * 10) / 10
 const pctText = p => `${p < 10 && !Number.isInteger(p) ? round1(p) : Math.round(p)}%`
+const planningColumns = [
+  { key: 'priority', label: 'Priority', type: 'text' },
+  { key: 'progress', label: 'Progress', type: 'text' },
+  { key: 'boxColor', label: 'Box color', type: 'text' },
+]
+const planningRow = d => ({ priority: PRIORITIES[priorityOf(d)].label, progress: PROGRESS[progressOf(d)].label, boxColor: BOX_COLORS[boxColorOf(d)] })
 
 /** Flag texts per target id, errors and warnings only, for the "Flags" column of a row. */
 function flagsById(flags) {
@@ -50,12 +57,13 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
         { key: 'booked', label: 'Booked (pts)', type: 'int' },
         { key: 'gap', label: 'Short (pts)', type: 'int' },
         { key: 'engineers', label: 'Short (engineers)', type: 'num' },
-        { key: 'status', label: 'Status', type: 'text' },
+        { key: 'status', label: 'Staffing status', type: 'text' },
         { key: 'count', label: 'People', type: 'int' },
         { key: 'split', label: 'Who, share of their capacity (pts)', type: 'text' },
         { key: 'leave', label: 'Lost to leave (pts)', type: 'int' },
         { key: 'note', label: 'Note', type: 'text' },
         { key: 'flags', label: 'Flags', type: 'text' },
+        ...planningColumns,
       ],
       rows: doc.deliverables.map(d => {
         const da = a.deliverables.get(d.id)
@@ -74,6 +82,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
           leave: da.leavePts || 0,
           note: d.note || '',
           flags: (byId.get(d.id) || []).join(' | '),
+          ...planningRow(d),
         }
       }),
     }
@@ -198,6 +207,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
         { key: 'estimate', label: 'Estimate (pts)', type: 'int' },
         { key: 'people', label: 'People', type: 'text' },
         { key: 'note', label: 'Note', type: 'text' },
+        ...planningColumns,
       ],
       rows: (doc.backlog || []).map(d => ({
         name: d.name.trim() || 'Untitled deliverable',
@@ -205,6 +215,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
         estimate: d.estimate ?? null,
         people: d.members.map(m => nameOf(m.person)).join('; '),
         note: d.note || '',
+        ...planningRow(d),
       })),
     }
   }

@@ -208,7 +208,7 @@ test('exports: the note and leave on every deliverable, and the Later and Done t
   const md = toMarkdown(doc, a, { today: new Date(2026, 8, 21) })
   assert.match(md, /\| Needs PCI sign-off \|/)
   assert.match(md, /leave: Ana's vacation/)
-  assert.match(md, /## Later\n\nNot counted in this plan\.\n\n- Later thing, 8 pts, Ana: Q1/)
+  assert.match(md, /## Later\n\nNot counted in this plan\.\n\n- Later thing, 8 pts, P3 priority, planned, Ana: Q1/)
   assert.match(md, /## Done\n[\s\S]*- Shipped, unsized/)
   assert.ok(md.indexOf('## Later') < md.indexOf('## Flags'))
 })

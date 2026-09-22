@@ -7,6 +7,7 @@
 import { shareKey, ROUNDING } from './capacity.js'
 import { computeFlags, deliverableStatus, statusText, missingPeople, engineers, leaveLines, CATEGORIES } from './flags.js'
 import { planRange, sprintWindows, lastWorkday, fmtDay, fmtSpan, parseISO } from './calendar.js'
+import { PRIORITIES, PROGRESS, priorityOf, progressOf } from './planning.js'
 
 // CommonMark ends a line at LF, CRLF or a lone CR: flatten all three.
 const flat = s => String(s ?? '').replace(/\r\n?|\n/g, ' ')
@@ -66,14 +67,14 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
     '',
     '## Deliverables',
     '',
-    '| Deliverable | Estimate | Booked | People | Status | Note |',
-    '|---|---:|---:|---|---|---|',
+    '| Deliverable | Estimate | Booked | People | Staffing | Priority | Progress | Note |',
+    '|---|---:|---:|---|---|---|---|---|',
     ...doc.deliverables.map(d => {
       const da = a.deliverables.get(d.id)
       const who = d.members.map(m => { const sh = a.shares.get(shareKey(d.id, m.person)); return `${name(m.person)} ${sh.points} (${pctText(sh.pct)})` })
       // A short deliverable says which leave made it short.
       const leave = da.gap > 0 && da.leavePts ? `; leave: ${leaveLines(da, doc, a).join(', ')}` : ''
-      return `| ${cell(d.name.trim() || 'Untitled deliverable')} | ${d.estimate ?? '?'} | ${da.got} | ${cell(who.join(', ') || 'none')} | ${cell(statusText(deliverableStatus(d, da, a, doc)) + leave)} | ${cell(d.note) || ' '} |`
+      return `| ${cell(d.name.trim() || 'Untitled deliverable')} | ${d.estimate ?? '?'} | ${da.got} | ${cell(who.join(', ') || 'none')} | ${cell(statusText(deliverableStatus(d, da, a, doc)) + leave)} | ${PRIORITIES[priorityOf(d)].label} | ${PROGRESS[progressOf(d)].label} | ${cell(d.note) || ' '} |`
     }),
     '',
     '## People',
@@ -105,7 +106,7 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
     lines.push('', `## ${title}`, '', `Not counted in this plan.`, '')
     for (const d of list) {
       const who = d.members.map(m => name(m.person)).join(', ')
-      lines.push(`- ${lead(d.name.trim() || 'Untitled deliverable')}${d.estimate ? `, ${plural(d.estimate, 'pt')}` : ', unsized'}${who ? `, ${flat(who)}` : ''}${d.note ? `: ${flat(d.note)}` : ''}`)
+      lines.push(`- ${lead(d.name.trim() || 'Untitled deliverable')}${d.estimate ? `, ${plural(d.estimate, 'pt')}` : ', unsized'}, ${PRIORITIES[priorityOf(d)].label} priority, ${PROGRESS[progressOf(d)].label.toLowerCase()}${who ? `, ${flat(who)}` : ''}${d.note ? `: ${flat(d.note)}` : ''}`)
     }
   }
   if (flags.length) {

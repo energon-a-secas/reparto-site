@@ -40,6 +40,12 @@ export function initials(name) {
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
 }
 
+/** Display only. Saved names, table rows and exports always retain the original. */
+export function compactName(name) {
+  const [first, second] = String(name || '').trim().split(/\s+/)
+  return first ? `${first}${second ? ` ${Array.from(second)[0].toLocaleUpperCase()}.` : ''}` : 'Unnamed'
+}
+
 // Face discs: eight hues at one lightness, keyed on the person's id so a
 // colour follows the person, never their position in the list. The name is
 // always printed beside the disc, so colour is never the only cue.

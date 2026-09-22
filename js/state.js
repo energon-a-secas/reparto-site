@@ -11,6 +11,7 @@
 
 import { DEFAULT_SETTINGS, SCALE, ROUNDING, defaultStart, PCT_MIN, PCT_MAX } from './capacity.js'
 import { parseISO, addDays, iso } from './calendar.js'
+import { normalizePlanning } from './planning.js'
 
 const UNDO_DEPTH = 40
 const MAX_LEAVE_DAYS = 3 * 366
@@ -22,6 +23,8 @@ export const ui = {
   carry: null,        // { person, from } while a person is picked up by click or key
   focus: null,        // { kind, ids } highlighted from a flag
   filter: 'all',      // flag category filter
+  flagScope: null,    // optional { kind, id } inspected in the flags dialog
+  personFilter: '',   // visible assignments only; never changes plan arithmetic
   showInfo: false,    // info-level flags are folded by default
   firstRun: false,
   view: 'cards',      // cards | table, for this plan's deliverables
@@ -140,7 +143,7 @@ export function normalizeDoc(raw) {
       else members.push({ person: pid, points: num(Math.round(m.points), 1, 999, 1) })
     }
     const est = Number(d.estimate)
-    return { id, name: str(d.name), note: str(d.note, 400), estimate: SCALE.includes(est) ? est : null, members }
+    return { id, name: str(d.name), note: str(d.note, 400), estimate: SCALE.includes(est) ? est : null, members, ...normalizePlanning(d) }
   }
   const deliverables = raw.deliverables.filter(d => d && typeof d === 'object').slice(0, MAX_ITEMS).map(deliverable)
   const backlog = (Array.isArray(raw.backlog) ? raw.backlog : []).filter(d => d && typeof d === 'object').slice(0, 500)
@@ -231,7 +234,7 @@ export function removePerson(id) {
 }
 
 export function addDeliverable(fields = {}) {
-  const d = { id: newId('d'), name: '', estimate: null, note: '', members: [], ...fields }
+  const d = { id: newId('d'), name: '', estimate: null, note: '', members: [], ...fields, ...normalizePlanning(fields) }
   state.doc.deliverables.push(d)
   return d
 }
@@ -244,7 +247,7 @@ export function removeDeliverable(id) {
 // ── Later and done ───────────────────────────────────────────
 /** Add a deliverable straight to the backlog. */
 export function addBacklogItem(when, fields = {}) {
-  const d = { id: newId('d'), name: '', estimate: null, note: '', members: [], ...fields, when: when === 'done' ? 'done' : 'later' }
+  const d = { id: newId('d'), name: '', estimate: null, note: '', members: [], ...fields, ...normalizePlanning(fields), when: when === 'done' ? 'done' : 'later' }
   state.doc.backlog.push(d)
   return d
 }

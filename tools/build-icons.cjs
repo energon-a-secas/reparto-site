@@ -29,6 +29,8 @@ const NAMES = [
   'layers', 'download', 'eraser', 'undo-2', 'redo-2', 'link', 'sheet', 'file-text', 'file-json', 'file-up', 'copy', 'plus', 'history', 'lightbulb', 'check', 'x',
   // views
   'layout-grid', 'table-2', 'chevron-up', 'chevron-down', 'arrow-up-down',
+  // workspace navigation and settings
+  'flag', 'sliders-horizontal', 'calendar-days', 'chevron-right',
 ]
 
 const out = {}

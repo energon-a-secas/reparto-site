@@ -120,7 +120,7 @@ export function renderCalendar(a, cal) {
   const sprintList = windows.map(w => {
     const pts = a.perSprint[w.i] ?? 0
     const low = state.doc.people.length && median && pts < median * 0.75
-    return `<li class="${low ? 'sprint--low' : ''}" title="${low ? 'Well below the other sprints: holidays or vacations cluster here' : ''}"><span class="sprint-n">S${w.i + 1}</span> ${fmtDay(w.from)} to ${fmtDay(lastWorkday(w, s.daysPerWeek))}${state.doc.people.length ? ` <span class="sprint-pts">· ${pts} pts</span>` : ''}</li>`
+    return `<li class="${low ? 'sprint--low' : ''}" title="${low ? 'Well below the other sprints: holidays or vacations cluster here' : ''}"><span class="sprint-n">S${w.i + 1}</span> <span class="sprint-dates">${fmtDay(w.from)} to ${fmtDay(lastWorkday(w, s.daysPerWeek))}</span>${state.doc.people.length ? ` <span class="sprint-pts">${pts} pts</span>` : ''}</li>`
   }).join('')
 
   // Controls: set values only when the visitor is not in them.
@@ -146,14 +146,11 @@ export function renderCalendar(a, cal) {
     whoSel.innerHTML = `<option value="">Everyone</option>` + s.countries.map(c => `<option value="${c}">${escHtml(countryName(c))} only</option>`).join('')
     whoSel.dataset.list = whoKey
   }
-  whoSel.hidden = s.countries.length < 2
+  $('dayOffCountryWrap').hidden = s.countries.length < 2
   // The folded line: enough to trust the numbers without opening the panel.
-  const vacations = [...a.people.values()].reduce((n, p) => n + p.lost.vacation, 0)
-  $('calSummary').textContent = [
-    range ? `${fmtDay(range.from)} to ${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)}` : 'no start date',
-    plural(s.sprints, 'sprint'),
-    s.countries.length ? s.countries.map(countryName).join(' + ') : 'no holidays',
-    loading ? 'loading…' : `${plural(a.offDays, 'day')} off for a full-timer`,
-    vacations ? plural(vacations, 'vacation day') : '',
-  ].filter(Boolean).join(' · ')
+  $('calSummary').innerHTML = [
+    `<strong>${range ? `${fmtDay(range.from)} to ${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)}` : 'Choose a start date'}</strong>`,
+    `<span>${escHtml(s.countries.length ? s.countries.map(countryName).join(' + ') : 'No public holidays')}</span>`,
+    `<span>${loading ? 'Loading holidays…' : `${plural(a.offDays, 'day')} off`}</span>`,
+  ].join('')
 }

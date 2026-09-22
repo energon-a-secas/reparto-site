@@ -34,11 +34,15 @@
 
   /* Reparto: status inks (always paired with an icon and a word, never colour alone)
      and a solid surface for the popover, which floats over translucent cards. */
-  --ok: #4ade80;
-  --warn: #fbbf24;
-  --err: #fb7185;
-  --info: #93c5fd;
-  --surface-solid: #0c1122;
+  --ok: oklch(78% 0.12 158);
+  --warn: oklch(82% 0.12 82);
+  --err: oklch(76% 0.13 15);
+  --info: oklch(79% 0.09 250);
+  --surface-solid: oklch(19% 0.016 260);
+  --planner-surface: oklch(20% 0.014 260);
+  --planner-raised: oklch(24% 0.014 260);
+  --planner-muted: oklch(73% 0.012 260);
+  --planner-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --z-pop: 450;
 }
 
@@ -563,7 +567,7 @@ button:active,
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: 0s !important;
   }
   .card--interactive:hover { transform: none; }
 }

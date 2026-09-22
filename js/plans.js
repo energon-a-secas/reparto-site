@@ -72,7 +72,7 @@ function open(id, doc) {
   state.doc = doc
   useHistory(id)
   setTabPlan(id)
-  ui.carry = null; ui.focus = null; ui.scope = 'plan'
+  ui.carry = null; ui.focus = null; ui.scope = 'plan'; ui.personFilter = ''; ui.flagScope = null
 }
 
 /** The tab's plan, else the last one used, else a plan from before named plans, else the example. True when a saved plan opened. */

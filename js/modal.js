@@ -43,6 +43,7 @@ export function closeModal(id) {
   // Opened from a menu item: the menu has closed since, so the item is hidden and cannot take
   // focus. Give it to the menu's button (Plans, Export, or the kit's ⋯) instead.
   let back = _modalLastFocus;
+  if (back && !back.isConnected) back = (back.dataset.key && document.querySelector(`[data-key="${CSS.escape(back.dataset.key)}"]`)) || document.getElementById('flagsBtn');
   const menu = back?.closest?.('.header-menu');
   if (back && menu && !back.getClientRects().length) back = document.querySelector(`[aria-controls="${menu.id}"]`) || back;
   if (back && typeof back.focus === 'function') {

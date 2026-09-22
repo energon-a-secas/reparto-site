@@ -146,8 +146,8 @@ test('MO-5 / MO-6: Later and Done names cannot open Markdown blocks, and one poi
     { id: 'c', name: '1. list', estimate: null, members: [], when: 'done' },
   ] })
   const md = toMarkdown(doc, analyze(doc), { today: new Date(2026, 8, 21) })
-  assert.match(md, /^- \\## Injected, 1 pt$/m)
-  assert.match(md, /^- \\> quote, 2 pts$/m)
-  assert.match(md, /^- 1\\\. list, unsized$/m)
+  assert.match(md, /^- \\## Injected, 1 pt, P3 priority, planned$/m)
+  assert.match(md, /^- \\> quote, 2 pts, P3 priority, planned$/m)
+  assert.match(md, /^- 1\\\. list, unsized, P3 priority, done$/m)
   assert.ok(!/^#+ Injected/m.test(md))
 })

@@ -22,12 +22,14 @@ import { askConfirm, bindConfirm } from './confirm.js'
 import { runExport, importFile } from './io.js'
 import { openExport, bindExportDialog } from './export-dialog.js'
 import { icon } from './icons.js'
+import { bindTooltips, hideTooltip } from './tooltip.js'
 import { $, showToast, escHtml, plural } from './utils.js'
 
 export function bindEvents() {
   // Static icons: <span data-icon="name"> in the page shell becomes the SVG.
   document.querySelectorAll('[data-icon]').forEach(el => { el.outerHTML = icon(el.dataset.icon) })
   bindDnd()
+  bindTooltips()
   setupMenu('plansBtn', 'plansMenu')
   setupMenu('exportBtn', 'exportMenu')
   document.addEventListener('click', onClick)
@@ -85,9 +87,10 @@ function setupMenu(btnId, menuId) {
 // ── Clicks ───────────────────────────────────────────────────
 function onClick(e) {
   const t = e.target
+  hideTooltip()
   modalClick(e)
   const pop = $('pop')
-  if (!pop.hidden && !pop.contains(t) && !t.closest('[data-action="estimate"], [data-action="points"], [data-action="card-menu"]')) closePop({ restore: false })
+  if (!pop.hidden && !pop.contains(t) && !t.closest('[data-action="estimate"], [data-action="points"], [data-action="card-menu"], [data-action="deliverable-details"]')) closePop({ restore: false })
   if (justDragged()) return
 
   const exp = t.closest('[data-export]')
@@ -196,7 +199,19 @@ function runAction(action, el = null) {
     }
     case 'import': $('importFile').click(); break
     case 'help': openModal('helpModal'); break
-    case 'export': openExport(el.dataset.table); break
+    case 'export':
+      if (!$('flagsModal').hidden) closeModal('flagsModal')
+      openExport(el.dataset.table); break
+    case 'flags': {
+      ui.flagScope = el?.dataset.kind && id ? { kind: el.dataset.kind, id } : null
+      ui.filter = 'all'; ui.showInfo = false
+      renderAll()
+      $('flagsModal').querySelector('.modal__body').scrollTop = 0
+      if ($('flagsModal').hidden) openModal('flagsModal')
+      else $('flagsModal').querySelector('[data-modal-close]:not([aria-hidden])')?.focus()
+      break
+    }
+    case 'clear-person-filter': ui.personFilter = ''; renderAll(); $('personFilter')?.focus(); break
 
     // The board: which deliverables, which view, which order
     case 'scope': ui.scope = el.dataset.scope; ui.carry = null; renderAll(); break
@@ -213,6 +228,7 @@ function runAction(action, el = null) {
       break
     }
     case 'add-deliverable': {
+      ui.personFilter = '' // A new, unassigned item must remain visible.
       snapshot()
       const d = ui.scope === 'plan' ? addDeliverable() : addBacklogItem(ui.scope)
       afterChange()
@@ -229,7 +245,9 @@ function runAction(action, el = null) {
       break
     }
 
-    case 'edit-person': openPerson(id); break
+    case 'edit-person':
+      if (!$('flagsModal').hidden) closeModal('flagsModal')
+      openPerson(id); break
     case 'remove-person': removeEditedPerson(); break
     case 'remove-day-off': keepChipFocus(el, () => { snapshot(); removeDayOff(el.dataset.date, el.dataset.code || ''); afterChange() }); break
     case 'work-holiday': keepChipFocus(el, () => { snapshot(); setWorked(el.dataset.code, el.dataset.date, true); afterChange() }); break
@@ -248,6 +266,7 @@ function runAction(action, el = null) {
       break
     }
     case 'estimate': togglePop(`de-${id}`, () => openEstimate(id)); break
+    case 'deliverable-details': togglePop(el.dataset.key, () => openCardMenu(id, { anchor: el.dataset.key, focus: el.dataset.field })); break
     case 'points': togglePop(`sp-${id}-${el.dataset.person}`, () => openShare(id, el.dataset.person)); break
     case 'unassign': {
       const p = person(el.dataset.person), d = deliverable(id)
@@ -260,8 +279,13 @@ function runAction(action, el = null) {
     case 'toggle-meeting': setAndRender('meetingDay', !state.doc.settings.meetingDay); break
     case 'filter': ui.filter = el.dataset.filter; renderAll(); break
     case 'toggle-info': ui.showInfo = !ui.showInfo; renderAll(); break
-    case 'show': show(el.dataset.kind, el.dataset.ids ? el.dataset.ids.split(',') : []); break
-    case 'fix': applyFix(el.dataset.fix, el.dataset.arg, openEstimate); break
+    case 'show':
+      if (!$('flagsModal').hidden) closeModal('flagsModal')
+      show(el.dataset.kind, el.dataset.ids ? el.dataset.ids.split(',') : []); break
+    case 'fix':
+      if (!$('flagsModal').hidden) closeModal('flagsModal')
+      ui.personFilter = ''
+      applyFix(el.dataset.fix, el.dataset.arg, openEstimate); break
   }
 }
 
@@ -301,6 +325,14 @@ function setCountries(list) {
 
 function onChange(e) {
   const t = e.target
+  if (t.id === 'boardSort') {
+    if (t.value === 'custom') return
+    const [key, dir] = t.value.split(':')
+    ui.sort = { key: key || '', dir: Number(dir) || 1 }; renderAll(); return
+  }
+  if (t.id === 'personFilter') {
+    ui.personFilter = t.value; ui.carry = null; renderAll(); return
+  }
   if (t.id === 'addCountry') {
     if (t.value) setCountries([...state.doc.settings.countries, t.value])
     t.value = ''

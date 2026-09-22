@@ -7,7 +7,8 @@ import { SCALE, fibCeil, analyze, shareKey, pctForPoints, PCT_MIN, PCT_MAX } fro
 import { engineers } from './flags.js'
 import { cal } from './holidays.js'
 import { afterChange } from './render.js'
-import { moveTo, removeDeliverablePinned, unassignPinned } from './actions.js'
+import { moveTo, removeDeliverablePinned, unassignPinned, saveDeliverableDetails } from './actions.js'
+import { PRIORITIES, PROGRESS, BOX_COLORS, priorityOf, progressOf, priorityColorOf } from './planning.js'
 import { icon } from './icons.js'
 import { $, escHtml, showToast, fmtPct } from './utils.js'
 
@@ -44,7 +45,9 @@ function place(anchor) {
   let top = r.bottom + 8
   if (top + h > vh - 8 && r.top - h - 8 > 8) top = r.top - h - 8
   const left = Math.min(Math.max(8, r.right - w), vw - w - 8)
-  pop.style.top = `${Math.max(8, top)}px`
+  // A phone may have too little room on either side of the anchor. Keep the
+  // picker in the viewport; its body scrolls when the viewport is shorter.
+  pop.style.top = `${Math.max(8, Math.min(top, vh - h - 8))}px`
   pop.style.left = `${left}px`
 }
 
@@ -113,6 +116,7 @@ export function openEstimate(delivId) {
     const days = Number(pop.querySelector('[data-in="days"]').value) || 0
     suggest(pop.querySelector('[data-out="team"]'), eng * spr * a.sprint, a.bookable)
     suggest(pop.querySelector('[data-out="days"]'), days * s.pointsPerDay, a.bookable)
+    repositionPop() // Suggestions can add rows after the picker was measured.
   }
   pop.querySelectorAll('[data-in]').forEach(i => i.addEventListener('input', recalc))
   recalc()
@@ -207,10 +211,10 @@ export function openShare(delivId, personId) {
   }
 }
 
-// ── A deliverable's menu: its note, Later, Done, remove ──────
+// ── A deliverable's menu: planning fields, note and moves ───
 // Later (a future plan) and Done (shipped) keep the deliverable and its
 // people but take it out of every number; bringing it back restores them.
-export function openCardMenu(delivId) {
+export function openCardMenu(delivId, { anchor = `dm-${delivId}`, focus = 'priority' } = {}) {
   const d = findDeliverable(delivId); if (!d) return
   const where = deliverable(delivId) ? 'plan' : d.when
   const name = d.name.trim() || 'Untitled deliverable'
@@ -219,27 +223,35 @@ export function openCardMenu(delivId) {
     where !== 'later' && ['later', 'calendar-clock', 'Move to Later'],
     where !== 'done' && ['done', 'archive', 'Mark as done'],
   ].filter(Boolean)
-  const pop = open(`dm-${delivId}`, `${head(name)}
+  const pop = open(anchor, `${head(name)}
+    <div class="pop-planning-fields">
+      <label class="pop-label" for="popPriority">Priority<select class="field" id="popPriority">${Object.entries(PRIORITIES).map(([key, value]) => `<option value="${key}"${priorityOf(d) === key ? ' selected' : ''}>${value.label}${key === 'p1' ? ' · Highest' : key === 'p6' ? ' · Lowest' : ''}</option>`).join('')}</select></label>
+      <label class="pop-label" for="popProgress">Progress<select class="field" id="popProgress">${Object.entries(PROGRESS).map(([key, value]) => `<option value="${key}"${progressOf(d) === key ? ' selected' : ''}>${value.label}</option>`).join('')}</select></label>
+    </div>
+    <fieldset class="priority-colors"><legend class="pop-label">Box color</legend><div class="priority-swatches">${[['', 'Automatic: follow priority'], ...Object.entries(BOX_COLORS)].map(([key, label]) => `<label class="priority-choice" data-color="${key || priorityColorOf(d)}" title="${label}"><input type="radio" name="popBoxColor" value="${key}"${(d.boxColor ?? d.priorityColor ?? '') === key ? ' checked' : ''} aria-label="${label}"><span aria-hidden="true">${key ? '' : icon('rotate-ccw', { size: 14 })}</span></label>`).join('')}</div><p class="color-hint">Automatic follows priority. Badge colors stay fixed.</p></fieldset>
     <label class="pop-label" for="popNote">Note</label>
     <textarea class="field field--area" id="popNote" rows="3" maxlength="400" placeholder="Scope, a link, who asked for it">${escHtml(d.note)}</textarea>
-    <div class="pop-row"><button type="button" class="btn btn--secondary btn--sm" data-menu="note">Save note</button><span class="pop-count" id="popNoteCount">${d.note.length}/400</span></div>
+    <div class="pop-row"><button type="button" class="btn btn--primary btn--sm" data-menu="note">Save changes</button><span class="pop-count" id="popNoteCount">${d.note.length}/400</span></div>
     <div class="pop-actions" role="group" aria-label="Move or remove">
       ${moves.map(([w, ic, label]) => `<button type="button" class="pop-action" data-menu="move" data-when="${w}">${icon(ic)}${label}</button>`).join('')}
       <button type="button" class="pop-action pop-action--danger" data-menu="remove">${icon('trash-2')}Remove</button>
     </div>
-    <p class="pop-note">${where === 'plan' ? 'Later and Done keep its people and stop counting it. Bring it back and its shares return as they were.' : 'It counts toward nothing until it is back in this plan.'}</p>`,
-  `${name}: note, move or remove`, '#popNote')
+    <p class="pop-note">${where === 'plan' ? 'Progress tracks work; it does not change capacity. Done moves this deliverable to Done and frees its planned points.' : where === 'done' ? 'Choose an active progress state to return this deliverable to the plan with its people.' : 'Later keeps its people without counting their points. Bring it back when you are ready to plan it.'}</p>`,
+  `${name}: priority, progress and details`, focus === 'progress' ? '#popProgress' : '#popPriority')
   if (!pop) return
   const note = pop.querySelector('#popNote')
+  pop.querySelector('#popPriority').addEventListener('change', e => {
+    pop.querySelector('.priority-choice').dataset.color = PRIORITIES[e.target.value].color
+  })
   note.addEventListener('input', () => { pop.querySelector('#popNoteCount').textContent = `${note.value.length}/400` })
   note.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); pop.querySelector('[data-menu="note"]').click() } })
   pop.onclick = e => {
     if (e.target.closest('[data-pop="close"]')) { closePop(); return }
     const b = e.target.closest('[data-menu]'); if (!b) return
     if (b.dataset.menu === 'note') {
-      const v = note.value.trim().slice(0, 400)
+      const fields = { note: note.value, priority: pop.querySelector('#popPriority').value, progress: pop.querySelector('#popProgress').value, boxColor: pop.querySelector('[name="popBoxColor"]:checked').value }
       closePop()
-      if (v !== d.note) { snapshot(); updateDeliverable(delivId, { note: v }); afterChange(); showToast(v ? 'Note saved' : 'Note removed') }
+      saveDeliverableDetails(delivId, fields)
       return
     }
     closePop({ restore: false })

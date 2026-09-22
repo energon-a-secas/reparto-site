@@ -82,10 +82,10 @@
 
     <div class="header-right">
       <div class="header-actions">
-        <button type="button" class="nav-link" id="undoBtn" data-action="undo" title="Undo (Ctrl+Z)" disabled><span data-icon="undo-2"></span><span>Undo</span></button>
-        <button type="button" class="nav-link" id="redoBtn" data-action="redo" title="Redo (Ctrl+Shift+Z)" disabled><span data-icon="redo-2"></span><span>Redo</span></button>
-        <button type="button" class="nav-link" id="wipeBtn" data-action="wipe" title="Empty this plan: its people, deliverables and days off"><span data-icon="eraser"></span><span>Wipe</span></button>
-        <button type="button" class="nav-link" data-action="help" title="How the numbers work"><span data-icon="circle-help"></span><span>Help</span></button>
+        <button type="button" class="nav-link" id="undoBtn" data-action="undo" aria-label="Undo" title="Undo (Ctrl+Z)" disabled><span data-icon="undo-2"></span><span class="planner-action-label">Undo</span></button>
+        <button type="button" class="nav-link" id="redoBtn" data-action="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled><span data-icon="redo-2"></span><span class="planner-action-label">Redo</span></button>
+        <button type="button" class="nav-link" id="wipeBtn" data-action="wipe" aria-label="Wipe" title="Empty this plan: its people, deliverables and days off"><span data-icon="eraser"></span><span class="planner-action-label">Wipe</span></button>
+        <button type="button" class="nav-link" data-action="help" aria-label="Help" title="How the numbers work"><span data-icon="circle-help"></span><span class="planner-action-label">Help</span></button>
         <!-- Every label sits in its own <span>: the header kit squares off a
              button whose only element child is an <svg> as icon-only.
              The two menus stay in the header on phones (data-keep-mobile): a
@@ -135,49 +135,80 @@
   <main id="main">
     <div class="plan">
 
-      <section class="calc" id="calc" aria-labelledby="calcTitle">
-        <div class="calc-head">
-          <h2 class="calc-title" id="calcTitle">One engineer's capacity</h2>
-          <p class="calc-lead" id="calcLead"></p>
+      <div class="plan-heading">
+        <div class="plan-identity">
+          <label class="plan-label" for="planTitle">Planning workspace</label>
+          <label class="plan-name-wrap" for="planTitle">
+            <input class="plan-title" id="planTitle" data-key="plan-title" aria-label="Plan name" maxlength="80" title="Rename this plan">
+            <span data-icon="pencil"></span>
+          </label>
         </div>
-        <div class="calc-chain" id="calcChain"></div>
+        <nav class="workspace-nav" aria-label="Jump to a section">
+          <a href="#roster"><span data-icon="users"></span>Team</a>
+          <a href="#deliverables"><span data-icon="layout-grid"></span>Deliverables</a>
+          <button type="button" class="flags-trigger" id="flagsBtn" data-action="flags" data-key="flags-trigger" aria-haspopup="dialog" aria-controls="flagsModal"><span data-icon="flag"></span><span>Flags</span><span class="flags-trigger-count" id="flagsTotal"></span></button>
+        </nav>
+      </div>
+
+      <section class="calc" id="calc" aria-labelledby="calcTitle">
+        <details class="capacity-rules" id="capacityRules">
+          <summary class="capacity-summary">
+            <span class="capacity-heading"><span data-icon="sliders-horizontal"></span><span id="calcTitle">Capacity settings</span></span>
+            <span class="capacity-overview" id="capacityOverview"></span>
+            <span class="disclosure-label"><span class="disclosure-closed">Edit rules</span><span class="disclosure-open">Hide rules</span><span data-icon="chevron-down"></span></span>
+          </summary>
+          <div class="rules-editor" id="calcChain"></div>
+          <p class="calc-lead" id="calcLead"></p>
+          <span class="sr-only" id="capacityUpdate" role="status" aria-atomic="true"></span>
+        </details>
         <!-- The calendar: the controls and the add form are static so a half-typed
              date survives a repaint; js/render-calendar.js fills the rest. -->
         <details class="cal" id="cal">
-          <summary class="cal-summary"><span class="cal-summary-label">Calendar</span> <span id="calSummary"></span></summary>
+          <summary class="capacity-summary cal-summary">
+            <span class="capacity-heading"><span data-icon="calendar-days"></span><span>Calendar</span></span>
+            <span class="capacity-overview" id="calSummary"></span>
+            <span class="disclosure-label"><span class="disclosure-closed">Edit dates &amp; days off</span><span class="disclosure-open">Hide calendar</span><span data-icon="chevron-down"></span></span>
+          </summary>
+          <div class="calendar-editor">
           <div class="cal-controls">
-            <label class="cal-field">Starts
-              <input type="date" class="field field--date" id="startDate" data-setting="startDate" required>
-            </label>
+            <div class="calendar-period">
+              <h2 class="editor-heading">Plan dates</h2>
+              <label class="cal-field">First day of the plan
+                <input type="date" class="field field--date" id="startDate" data-setting="startDate" required>
+              </label>
+              <p class="cal-range" id="calRange"></p>
+            </div>
             <div class="cal-field cal-field--countries">
-              <span id="countriesLabel">Public holidays: the team's countries</span>
+              <h2 class="editor-heading" id="countriesLabel">Public holidays</h2><p class="editor-hint">Choose the countries your team works in.</p>
               <div class="country-picks" id="countryPicks" role="group" aria-labelledby="countriesLabel"></div>
               <div class="country-more">
                 <select class="field field--country" id="addCountry" aria-label="Add another country"></select>
-                <label class="country-default" id="defaultWrap" hidden>No country set follows
+                <label class="country-default" id="defaultWrap" hidden>Default holiday calendar
                   <select class="field field--country" id="defaultCountry"></select>
                 </label>
               </div>
             </div>
-            <p class="cal-range" id="calRange"></p>
           </div>
+          <h2 class="editor-heading">Sprint schedule</h2>
           <ol class="sprint-strip" id="sprintStrip" aria-label="Sprint dates"></ol>
           <p class="cal-note" id="calNote"></p>
           <div class="cal-days">
+            <h2 class="editor-heading">Holidays &amp; team days off</h2>
             <p class="cal-days-head" id="calDaysHead"></p>
             <ul class="day-chips" id="dayChips"></ul>
             <form class="day-add" id="dayOffForm" autocomplete="off">
-              <input type="date" class="field field--date" name="date" aria-label="Team day off date" required>
-              <input class="field" name="label" placeholder="Offsite, shutdown…" aria-label="Team day off reason" maxlength="60">
-              <select class="field field--who" name="country" aria-label="Who gets the day off"><option value="">Everyone</option></select>
+              <label class="cal-field">Date<input type="date" class="field field--date" name="date" aria-label="Team day off date" required></label>
+              <label class="cal-field">Reason<input class="field" name="label" placeholder="Offsite, shutdown…" aria-label="Team day off reason" maxlength="60"></label>
+              <label class="cal-field" id="dayOffCountryWrap">Applies to<select class="field field--who" name="country" aria-label="Who gets the day off"><option value="">Everyone</option></select></label>
               <button type="submit" class="btn btn--secondary btn--sm">Add team day off</button>
             </form>
+          </div>
           </div>
         </details>
       </section>
 
       <div class="first-run" id="firstRun" role="note" hidden>
-        <p>This is an <strong>example team with problems planted on purpose</strong>. Fix a flag to see how it works, or start your own.</p>
+        <div class="first-run-copy"><span data-icon="lightbulb"></span><p><strong>Explore an example plan.</strong> Try fixing a flag, or start fresh with your team.</p></div>
         <div class="first-run-actions">
           <button type="button" class="btn btn--primary btn--sm" data-action="blank">Start my own plan</button>
           <button type="button" class="btn btn--ghost btn--sm" data-action="dismiss-intro">Got it</button>
@@ -201,39 +232,54 @@
             <input class="field" id="personRole" name="role" placeholder="Role" aria-label="New person's role" maxlength="80">
             <button type="submit" class="btn btn--secondary btn--sm">Add</button>
           </form>
-          <p class="panel-tip">Drag a person onto a deliverable, or click them and then the deliverable. Click the number on a share to set its percentage; the pencil on a row shows their whole split. Drop a share back here to remove it.</p>
+          <p class="panel-tip">Drag a person onto a deliverable, or click to pick them up.</p>
+          <details class="team-help">
+            <summary>How to split someone's time</summary>
+            <p>Click a share's number to change its percentage. Use the pencil beside a person to edit their full split, load, or leave. Drop a share back onto the team to remove it.</p>
+          </details>
         </aside>
 
-        <section class="board" aria-labelledby="boardTitle">
+        <section class="board" id="deliverables" aria-labelledby="boardTitle">
           <div class="board-head">
-            <h2 class="sr-only" id="boardTitle">Deliverables</h2>
-            <input class="plan-title" id="planTitle" data-key="plan-title" aria-label="Plan name" maxlength="80">
-            <button type="button" class="btn btn--secondary btn--sm" id="addDelivBtn" data-action="add-deliverable">Add deliverable</button>
+            <h2 class="board-title" id="boardTitle">Deliverables</h2>
+            <button type="button" class="btn btn--primary btn--sm" id="addDelivBtn" data-action="add-deliverable">Add deliverable</button>
           </div>
           <div class="board-bar" id="boardBar"></div>
-          <div class="flag-bar" id="flagBar"></div>
+          <div class="board-filter-note" id="boardFilterNote" role="status" hidden></div>
           <div class="carry-bar" id="carryBar" role="status" hidden></div>
           <div class="board-grid" id="board"></div>
           <div class="table-wrap" id="boardTable" hidden></div>
         </section>
         </div>
 
-        <aside class="flags" id="flags" aria-labelledby="flagsTitle">
-          <div class="panel-head">
-            <h2 class="panel-title" id="flagsTitle">Flags</h2>
-            <span class="panel-count" id="flagCount" role="status"></span>
-            <button type="button" class="panel-link" data-action="export" data-table="flags">Export</button>
-          </div>
-          <div class="flag-filters" id="flagFilters" role="group" aria-label="Filter flags"></div>
-          <ol class="flag-list" id="flagList"></ol>
-          <button type="button" class="flag-more" id="flagMore" data-action="toggle-info" hidden></button>
-        </aside>
+
       </div>
     </div>
   </main>
 
   <!-- Anchored popover for the estimate and share pickers (built by js/popover.js). -->
   <div class="pop" id="pop" role="dialog" aria-modal="false" hidden></div>
+
+  <!-- Flags and item details are shown only when requested. -->
+  <div class="modal" id="flagsModal" hidden>
+    <div class="modal__backdrop" data-modal-close tabindex="-1" aria-hidden="true"></div>
+    <div class="modal__dialog flags-dialog" role="dialog" aria-modal="true" aria-labelledby="flagsTitle" tabindex="-1">
+      <div class="modal__header">
+        <div><p class="dialog-eyebrow" id="flagsEyebrow">Plan review</p><h2 id="flagsTitle">Flags</h2></div>
+        <button type="button" class="btn btn--ghost btn--icon" data-modal-close aria-label="Close flags"><span data-icon="x"></span></button>
+      </div>
+      <div class="modal__body flags-body">
+        <div id="flagsContext"></div>
+        <div class="flags-toolbar"><span class="panel-count" id="flagCount" role="status"></span><button type="button" class="panel-link" id="allFlagsBtn" data-action="flags" hidden>All plan flags</button></div>
+        <div class="flag-filters" id="flagFilters" role="group" aria-label="Filter flags"></div>
+        <ol class="flag-list" id="flagList"></ol>
+        <button type="button" class="flag-more" id="flagMore" data-action="toggle-info" hidden></button>
+      </div>
+      <div class="modal__footer"><button type="button" class="btn btn--secondary btn--sm" data-action="export" data-table="flags"><span data-icon="download"></span>Export flags</button><button type="button" class="btn btn--primary btn--sm" data-modal-close>Done</button></div>
+    </div>
+  </div>
+
+  <div class="hover-tip" id="hoverTip" role="tooltip" hidden></div>
 
   <!-- Person editor -->
   <div class="modal" id="personModal" hidden>

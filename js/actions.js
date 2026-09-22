@@ -7,6 +7,7 @@ import { analyze, shareKey, pctForPoints, trimShares, pinShares } from './capaci
 import { cal } from './holidays.js'
 import { afterChange, renderAll } from './render.js'
 import { showToast, fmtPct } from './utils.js'
+import { normalizePlanning } from './planning.js'
 
 const nameOf = p => p?.name.trim() || 'Unnamed'
 
@@ -91,8 +92,10 @@ export function unassignPinned(delivId, personId) {
   const d = deliverable(delivId); if (!d) return false
   const at = d.members.findIndex(m => m.person === personId)
   const next = d.members[at + 1] || d.members[at - 1]
+  const refocus = ui.personFilter === personId ? focusAfter(delivId) : null
   if (!keepOthers(delivId, () => { unassign(delivId, personId); return true })) return false
-  focusKey(next && next.person !== personId ? `s-${delivId}-${next.person}` : `de-${delivId}`)
+  if (refocus) refocus() // Removing the filtered person also hides this deliverable.
+  else focusKey(next && next.person !== personId ? `s-${delivId}-${next.person}` : `de-${delivId}`)
   return true
 }
 
@@ -117,6 +120,30 @@ function keepOthers(delivId, change) {
 }
 
 const WHEN = { plan: 'this plan', later: 'Later', done: 'Done' }
+
+/** Save metadata and an optional Done/restore move together as one undo step. */
+export function saveDeliverableDetails(delivId, fields) {
+  const d = findDeliverable(delivId); if (!d) return
+  const when = fields.progress === 'done' ? 'done' : d.when === 'done' ? 'plan' : null
+  const moving = when && when !== (d.when || 'plan')
+  const refocus = moving ? focusAfter(delivId) : null
+  const change = () => {
+    Object.assign(d, normalizePlanning({ ...fields, progress: fields.progress === 'done' ? d.progress : fields.progress }), { note: fields.note.trim().slice(0, 400) })
+    if (moving) moveDeliverable(delivId, when)
+    return true
+  }
+  if (moving) {
+    ui.carry = null
+    if (!keepOthers(delivId, change)) return
+    refocus()
+  } else {
+    const before = JSON.stringify(state.doc)
+    change()
+    if (!commitFrom(before)) return
+    afterChange()
+  }
+  showToast(moving ? `${d.name || 'Deliverable'} moved to ${WHEN[when]}` : 'Deliverable details saved')
+}
 
 /**
  * Where keyboard focus goes once a deliverable leaves the list on screen:
@@ -158,6 +185,7 @@ export function removeDeliverablePinned(delivId) {
 // ── Carry: pick up with a click or Enter, put down on a deliverable ──
 export function pickUp(personId, from = null) {
   if (ui.carry && ui.carry.person === personId && ui.carry.from === from) { cancelCarry(); return }
+  ui.personFilter = '' // All destinations are available while assigning.
   ui.carry = { person: personId, from }
   renderAll()
   // The first deliverable, not the roster's "Take off" button, or Enter, Enter would remove them.
@@ -243,7 +271,15 @@ export function applyFix(action, arg, openEstimate) {
 // ── Show: scroll to a flag's target and pulse it ─────────────
 let _focusTimer = null
 export function show(kind, ids, { instant = false } = {}) {
-  if (kind === 'settings') { document.getElementById('calc')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return }
+  ui.personFilter = '' // A flag target must not be hidden by an assignment filter.
+  if (kind === 'settings') {
+    renderAll()
+    const rules = document.getElementById('capacityRules')
+    if (rules) rules.open = true
+    document.getElementById('calc')?.scrollIntoView({ behavior: instant ? 'instant' : 'smooth', block: 'start' })
+    rules?.querySelector('summary')?.focus({ preventScroll: true })
+    return
+  }
   ui.focus = { kind, ids }
   // A flag's deliverable is in this plan; Later and Done would not show it.
   if (kind === 'deliverable') ui.scope = 'plan'
