@@ -25,6 +25,9 @@ export function afterChange() {
 
 export function renderAll() {
   const key = document.activeElement?.dataset?.key
+  // A control with no key inside a card or row (a drop button, a chip's x) is gone after the repaint:
+  // keep the keyboard on that deliverable instead of dropping it to <body>.
+  const inCard = !key && document.activeElement?.closest?.('[data-deliv]')?.dataset.deliv
   const a = analyze(state.doc, cal)
   ensureHolidays(a.calendar.needed)       // a calendar that arrives later repaints through onHolidays()
   const flags = computeFlags(state.doc, a)
@@ -36,6 +39,7 @@ export function renderAll() {
   renderFlags(flags)
   renderChrome()
   if (key) document.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true })
+  else if (inCard && document.activeElement === document.body) document.querySelector(`[data-key="de-${CSS.escape(inCard)}"]`)?.focus({ preventScroll: true })
 }
 
 const ORIGIN = { link: 'from a link', import: 'imported', example: 'the example', copy: 'a copy', restored: 'restored', blank: '' }

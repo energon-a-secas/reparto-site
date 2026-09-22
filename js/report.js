@@ -33,7 +33,9 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
 
   // Holidays taken out, named per country; worked ones are not listed.
   const worked = new Set((s.worked || []).map(w => `${w.country}|${w.date}`))
-  const named = s.countries.map(code => {
+  // Every calendar anyone follows: the team's countries, then any person's own.
+  const followed = [...new Set([...s.countries, ...doc.people.map(p => p.country)].filter(Boolean))]
+  const named = followed.map(code => {
     const days = []
     if (range && cal) {
       for (let y = range.from.getUTCFullYear(); y <= range.last.getUTCFullYear(); y++) {
@@ -55,7 +57,7 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
     `**One engineer:** ${steps.join(' ')}. Everyone else is their own capacity scaled by the same factor.`,
     '',
     `**Calendar:** starts ${fmtDay(s.startDate, true)}${end ? `, ends ${fmtDay(end, true)}` : ''} · holidays taken out: ${named.join('; ') || 'none (no countries picked)'}`
-      + `${doc.daysOff.length ? ` · team days off: ${doc.daysOff.map(t => `${fmtDay(t.date)} ${t.label}${t.country ? ` (${countryName(t.country)} only)` : ''}`).join(', ')}` : ''}`
+      + `${doc.daysOff.length ? ` · team days off: ${doc.daysOff.map(t => `${fmtDay(t.date)} ${flat(t.label)}${t.country ? ` (${countryName(t.country)} only)` : ''}`).join(', ')}` : ''}`
       + `${(s.worked || []).length ? ` · worked holidays: ${s.worked.map(w => `${countryName(w.country)} ${fmtDay(w.date)}`).join(', ')}` : ''}`,
     '',
     `**Sprints:** ${sprintWindows(s).map(w => `S${w.i + 1} ${fmtDay(w.from)} to ${fmtDay(lastWorkday(w, s.daysPerWeek))} ${a.perSprint[w.i] ?? 0} pts`).join(' · ')}`,
@@ -80,7 +82,8 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
     '|---|---|---|---|---:|---:|---:|---:|---|',
     ...doc.people.map(p => {
       const pa = a.people.get(p.id)
-      const vac = (p.vacations || []).map(v => fmtSpan(v.from, v.to)).filter(Boolean).join(', ')
+      // Only the periods that cost a working day in this plan, as the leave lines name them.
+      const vac = (p.vacations || []).filter(v => pa.vacationDays.some(d => d >= v.from && d <= v.to)).map(v => fmtSpan(v.from, v.to)).filter(Boolean).join(', ')
       const off = [
         pa.lost.holiday && `${pa.lost.holiday} holiday`,
         pa.lost.team && `${pa.lost.team} team`,

@@ -186,6 +186,11 @@
 .cal[open] > .cal-summary { margin-bottom: var(--space-3); }
 .cal:not([open]) { gap: 0; }
 
+/* Focus and anchor scrolls stop below the header and, where it shows, the sticky flag bar (height set in render-flags.js) */
+html { scroll-padding-top: calc(72px + var(--flag-bar-h, 0px)); }
+/* With the header auto-hidden, the bar moves up with it instead of floating 64px down */
+body:has(.header-bar.header-hidden) .flag-bar { top: 8px; }
+
 /* One-line flag summary above the board, where the panel is not beside it */
 .flag-bar {
   display: none;

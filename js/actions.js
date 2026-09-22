@@ -33,10 +33,13 @@ export function defaultShare(personId, delivId, a = analyze(state.doc, cal)) {
  */
 export function dropPerson(personId, from, target) {
   const p = person(personId); if (!p) return false
+  // A carry can outlive its share (an undo, a move to Later): refuse rather than claim a move that did not happen.
+  if (from && !deliverable(from)?.members.some(m => m.person === personId)) { showToast('That share is no longer there'); return false }
   if (target === 'roster') {
     if (!from) return false
     const d = deliverable(from)
-    snapshot(); unassign(from, personId); afterChange()
+    unassignPinned(from, personId)
+    focusKey(`p-${personId}`)
     showToast(`${nameOf(p)} taken off ${d?.name || 'the deliverable'}`)
     return true
   }
@@ -54,6 +57,7 @@ export function dropPerson(personId, from, target) {
     keep.set(target, (moved?.points ?? 0) + (there?.points ?? 0))
     state.doc = pinShares(state.doc, cal, personId, keep)
     afterChange()
+    focusKey(`s-${target}-${personId}`)
     showToast(`${nameOf(p)}'s share moved to ${d.name || 'the deliverable'}`)
     return true
   }
@@ -66,10 +70,29 @@ export function dropPerson(personId, from, target) {
   snapshot()
   if (had) setShare(target, personId, pct); else assign(target, personId, pct)
   afterChange()
+  focusKey(`s-${target}-${personId}`)
   const after = analyze(state.doc, cal)
   const got = after.shares.get(shareKey(target, personId))
   const left = after.people.get(personId).free
   showToast(`${nameOf(p)} gives ${fmtPct(got.pct)} (${got.points} pts) to ${d.name || 'the deliverable'} · ${left < 0 ? `${-left} over` : `${left} free`}`)
+  return true
+}
+
+/** Focus the control with this data-key once it is back on screen, without scrolling to it. */
+export function focusKey(key) { document.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true }) }
+
+/**
+ * Take one person off one card and keep their other cards to the point.
+ * Every way a share comes off goes through here: the x on a chip, the
+ * popover's Take off, a drag back to the team list. Focus goes to the next
+ * chip on the card, else its estimate.
+ */
+export function unassignPinned(delivId, personId) {
+  const d = deliverable(delivId); if (!d) return false
+  const at = d.members.findIndex(m => m.person === personId)
+  const next = d.members[at + 1] || d.members[at - 1]
+  if (!keepOthers(delivId, () => { unassign(delivId, personId); return true })) return false
+  focusKey(next && next.person !== personId ? `s-${delivId}-${next.person}` : `de-${delivId}`)
   return true
 }
 
@@ -117,6 +140,7 @@ export function moveTo(delivId, when) {
   const name = d.name.trim() || 'The deliverable'
   const pts = when !== 'plan' && deliverable(delivId) ? analyze(state.doc, cal).deliverables.get(delivId)?.got || 0 : 0
   const refocus = focusAfter(delivId)
+  ui.carry = null     // a carried share on this card would outlive it
   if (!keepOthers(delivId, () => moveDeliverable(delivId, when))) return
   refocus()
   showToast(when === 'plan' ? `${name} is back in this plan${d.members.length ? ' with its people' : ''}`
@@ -125,6 +149,7 @@ export function moveTo(delivId, when) {
 
 export function removeDeliverablePinned(delivId) {
   const refocus = focusAfter(delivId)
+  ui.carry = null
   const done = keepOthers(delivId, () => { removeDeliverable(delivId); return true })
   if (done) refocus()
   return done
@@ -196,9 +221,9 @@ export function applyFix(action, arg, openEstimate) {
   }
   if (action === 'trim') {
     const d = deliverable(arg); if (!d?.estimate) return
-    const members = trimShares(state.doc, cal, d.id)
-    snapshot(); d.members = members; afterChange()
-    showToast(`${d.name || 'Deliverable'} trimmed to ${d.estimate} pts`)
+    // keepOthers pins the people's other cards on the real plan; trimShares' own pins stayed in its copy.
+    if (keepOthers(d.id, () => { d.members = trimShares(state.doc, cal, d.id); return true })) showToast(`${d.name || 'Deliverable'} trimmed to ${d.estimate} pts`)
+    focusKey(`de-${d.id}`)
     return
   }
   if (action === 'open-roles') {
@@ -225,6 +250,8 @@ export function show(kind, ids, { instant = false } = {}) {
   renderAll()
   const first = document.getElementById(`${kind === 'person' ? 'p' : 'd'}-${ids[0]}`)
   first?.scrollIntoView({ behavior: instant ? 'instant' : 'smooth', block: 'center', inline: 'nearest' })
+  // Keyboard users land where the flag pointed: the person's row, or the deliverable's estimate.
+  if (!instant) focusKey(kind === 'person' ? `p-${ids[0]}` : `de-${ids[0]}`)
   clearTimeout(_focusTimer)
   _focusTimer = setTimeout(() => { ui.focus = null; renderAll() }, 2200)
 }

@@ -158,7 +158,9 @@ function leaveByShare(doc, people) {
     if (!p || !(p.leave.vacation || p.leave.away)) continue
     const pcts = list.map(x => x.pct)
     const now = splitPoints(p.cap, pcts), noVac = splitPoints(p.leave.capNoVacation, pcts), noLeave = splitPoints(p.leave.capNoLeave, pcts)
-    list.forEach((x, i) => out.set(x.key, { vacation: Math.max(0, noVac[i] - now[i]), away: Math.max(0, noLeave[i] - noVac[i]) }))
+    // Signed: largest remainder can hand a card a point when capacity shrinks. analyze() nets a card's
+    // members before clipping, so a card is only "short because of leave" if it would be staffed without it.
+    list.forEach((x, i) => out.set(x.key, { net: noLeave[i] - now[i], vacation: noVac[i] - now[i] }))
   }
   return out
 }
@@ -191,7 +193,7 @@ export function analyze(doc, cal = NO_CAL) {
   const deliverables = new Map()
   let demand = 0, allocated = 0, shortfall = 0, unsized = 0
   for (const d of doc.deliverables) {
-    let got = 0
+    let got = 0, leaveNet = 0
     const leave = []
     for (const m of d.members) {
       const sh = shares.get(shareKey(d.id, m.person))
@@ -200,13 +202,17 @@ export function analyze(doc, cal = NO_CAL) {
       const p = people.get(m.person)
       if (p) { p.used += sh.points; p.pct += sh.pct; p.count += 1 }
       const lv = leaveShares.get(shareKey(d.id, m.person))
-      if (lv && (lv.vacation || lv.away)) leave.push({ person: m.person, ...lv })
+      if (lv) {
+        leaveNet += lv.net
+        const lost = Math.max(0, lv.net), vacation = Math.min(Math.max(0, lv.vacation), lost)
+        if (lost) leave.push({ person: m.person, vacation, away: lost - vacation })
+      }
     }
     allocated += got
     if (d.estimate) demand += d.estimate; else unsized += 1
     const gap = d.estimate ? d.estimate - got : 0
     if (gap > 0) shortfall += gap
-    deliverables.set(d.id, { estimate: d.estimate, got, gap, leave, leavePts: leave.reduce((t, x) => t + x.vacation + x.away, 0) })
+    deliverables.set(d.id, { estimate: d.estimate, got, gap, leave, leavePts: Math.max(0, leaveNet) })
   }
   let capacity = 0, raw = 0, openCap = 0, free = 0, over = 0
   for (const p of doc.people) {
@@ -358,6 +364,7 @@ export function trimShares(doc, cal, delivId) {
     if (extra <= 0) break
     const a = analyze(work, cal)
     const pts = a.shares.get(shareKey(delivId, m.person)).points
+    if (!pts) continue      // a share that gives nothing trims nothing: leave it
     const cap = a.people.get(m.person)?.cap ?? 0
     const cut = Math.min(extra, pts)
     extra -= cut

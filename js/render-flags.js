@@ -68,4 +68,7 @@ function renderBar(flags, errors, warns) {
        <span class="fb-top">${flagText(top)}${top.fix ? ` ${fixBtn(top)}` : ''}</span>
        <a class="fb-all" href="#flags">All flags</a>`
     : `<span class="fb-count fb-count--ok">${icon('circle-check', { size: 15 })} Nothing missing</span>`
+  // The bar is sticky: tell the page how tall it is, so a control scrolled into view by focus lands below it.
+  const bar = $('flagBar')
+  document.documentElement.style.setProperty('--flag-bar-h', `${bar.offsetParent ? bar.offsetHeight + 8 : 0}px`)
 }

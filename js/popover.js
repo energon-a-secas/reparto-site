@@ -2,12 +2,12 @@
 // One element (#pop), anchored under the control that opened it. The anchor
 // is remembered by data-key, not by node, because every change re-renders.
 
-import { state, snapshot, deliverable, findDeliverable, person, updateDeliverable, setShare, unassign } from './state.js'
-import { SCALE, fibCeil, analyze, shareKey, pctForPoints } from './capacity.js'
+import { state, snapshot, deliverable, findDeliverable, person, updateDeliverable, setShare } from './state.js'
+import { SCALE, fibCeil, analyze, shareKey, pctForPoints, PCT_MIN, PCT_MAX } from './capacity.js'
 import { engineers } from './flags.js'
 import { cal } from './holidays.js'
 import { afterChange } from './render.js'
-import { moveTo, removeDeliverablePinned } from './actions.js'
+import { moveTo, removeDeliverablePinned, unassignPinned } from './actions.js'
 import { icon } from './icons.js'
 import { $, escHtml, showToast, fmtPct } from './utils.js'
 
@@ -59,6 +59,22 @@ function open(key, html, label, focus = '') {
   ;((focus && pop.querySelector(focus)) || pop.querySelector('[aria-pressed="true"]') || pop.querySelector('button, input'))?.focus({ preventScroll: true })
   return pop
 }
+
+// Tab past either end of the popover closes it and puts focus back on the control that opened it,
+// so the next Tab carries on from there instead of jumping to the footer with the popover left open.
+function bindEdges() {
+  const pop = $('pop')
+  pop.addEventListener('keydown', e => {
+    if (e.key !== 'Tab' || pop.hidden) return
+    const all = [...pop.querySelectorAll('button, input, textarea, select')].filter(el => !el.disabled && el.getClientRects().length)
+    if (!all.length) return
+    if ((!e.shiftKey && document.activeElement === all[all.length - 1]) || (e.shiftKey && document.activeElement === all[0])) {
+      e.preventDefault()
+      closePop()
+    }
+  })
+}
+bindEdges()
 
 const head = title => `<div class="pop-head"><strong>${escHtml(title)}</strong>
   <button type="button" class="icon-btn" data-pop="close" aria-label="Close"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>`
@@ -147,7 +163,7 @@ export function openShare(delivId, personId) {
     <div class="scale" role="group" aria-label="Percent of their ${pa.cap} points">${PCTS.map(v =>
       `<button type="button" class="scale-btn" data-pct="${v}" aria-pressed="${Math.round(sh.pct) === v}">${v}%</button>`).join('')}</div>
     <div class="pop-row">
-      <input class="field field--num" id="popPct" type="number" min="1" max="400" step="1" value="${Math.round(sh.pct)}" aria-label="Percent">
+      <input class="field field--num" id="popPct" type="number" min="${PCT_MIN}" max="${PCT_MAX}" step="any" value="${Math.round(sh.pct * 100) / 100}" aria-label="Percent">
       <span>%</span>
       <button type="button" class="btn btn--secondary btn--sm" data-pct="exact">Set</button>
       <span class="pop-or">or</span>
@@ -168,19 +184,22 @@ export function openShare(delivId, personId) {
     const raw = b.dataset.pct
     if (raw === 'remove') {
       closePop({ restore: false })
-      snapshot(); unassign(delivId, personId); afterChange()
-      showToast(`${who} taken off ${d.name || 'the deliverable'}`)
+      if (unassignPinned(delivId, personId)) showToast(`${who} taken off ${d.name || 'the deliverable'}`)
       return
     }
+    // A share is stored between PCT_MIN and PCT_MAX of their capacity: say so rather than clamp in silence.
+    const most = Math.floor((pa.cap * PCT_MAX) / 100)
     let v
     if (raw === 'exact') v = Number(pop.querySelector('#popPct').value)
     else if (raw === 'points') {
       const pts = Math.round(Number(pop.querySelector('#popPts').value))
       if (!(pts >= 1)) { showToast('A share is at least 1 point'); return }
       if (!pa.cap) { showToast(`${who} has no capacity in this plan, so points cannot be split`); return }
+      if (pts > most) { showToast(`A share is at most ${PCT_MAX}% of ${who}'s ${pa.cap} pts: ${most} pts`); return }
       v = pctForPoints(state.doc, cal, delivId, personId, pts)
     } else v = Number(raw)
-    if (!(v >= 1)) { showToast('A share is at least 1%'); return }
+    if (!(v >= PCT_MIN)) { showToast(`A share is at least ${PCT_MIN}%`); return }
+    if (v > PCT_MAX) { showToast(`A share is at most ${PCT_MAX}% of ${who}'s capacity`); return }
     closePop({ restore: false })
     if (!sh.fixed && Math.abs(v - sh.pct) < 0.005) return
     snapshot(); setShare(delivId, personId, v); afterChange()

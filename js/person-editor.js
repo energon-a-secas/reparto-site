@@ -6,7 +6,7 @@
 // cannot disagree with the row.
 
 import { state, snapshot, commitFrom, person, deliverable, updatePerson, removePerson, assign, setShare, unassign } from './state.js'
-import { analyze, personCapacity, capFromRaw, shareKey, splitPoints } from './capacity.js'
+import { analyze, personCapacity, capFromRaw, shareKey, splitPoints, PCT_MIN, PCT_MAX } from './capacity.js'
 import { parseISO, addDays, iso, planRange, workdaysIn, daysOffFor } from './calendar.js'
 import { cal, countryName, ensureHolidays } from './holidays.js'
 import { countryOptions } from './render-calendar.js'
@@ -48,7 +48,7 @@ function addDistRow(delivId, pct, initial = null) {
   const name = d.name.trim() || 'Untitled deliverable'
   $('distList').insertAdjacentHTML('beforeend', `<li class="dist-row" data-deliv="${delivId}" data-initial="${initial ?? ''}">
     <span class="dist-name" title="${escHtml(name)}">${escHtml(name)}</span>
-    <input type="number" class="field field--num" min="1" max="400" step="any" value="${Math.round(pct * 100) / 100}" aria-label="Percent of their capacity on ${escHtml(name)}">
+    <input type="number" class="field field--num" min="${PCT_MIN}" max="${PCT_MAX}" step="any" value="${Math.round(pct * 100) / 100}" aria-label="Percent of their capacity on ${escHtml(name)}">
     <span class="dist-unit">%</span>
     <span class="dist-pts"></span>
     <button type="button" class="icon-btn" data-dist-remove aria-label="Take them off ${escHtml(name)}">${X_ICON}</button>

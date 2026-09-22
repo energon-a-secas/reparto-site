@@ -4,7 +4,7 @@
 
 import {
   state, ui, snapshot, undo, redo, setSetting, deliverable, findDeliverable, person,
-  addPerson, addDeliverable, addBacklogItem, updateDeliverable, unassign, addDayOff, removeDayOff, setWorked, wipe,
+  addPerson, addDeliverable, addBacklogItem, updateDeliverable, addDayOff, removeDayOff, setWorked, wipe,
 } from './state.js'
 import {
   saveState, switchPlan, newBlankPlan, openExample, duplicatePlan, deletePlan, previousPlans, previousKey, keepPrevious, restorePrevious, listPlans, isBlankPlan,
@@ -15,7 +15,7 @@ import { cal, taggedHolidays, countryName } from './holidays.js'
 import { bindPersonEditor, openPerson, removeEditedPerson } from './person-editor.js'
 import { afterChange, renderAll } from './render.js'
 import { bindDnd, justDragged } from './dnd.js'
-import { pickUp, putDown, cancelCarry, applyFix, show, moveTo, removeDeliverablePinned } from './actions.js'
+import { pickUp, putDown, cancelCarry, applyFix, show, moveTo, removeDeliverablePinned, unassignPinned } from './actions.js'
 import { openEstimate, openShare, openCardMenu, closePop, popAnchor, repositionPop } from './popover.js'
 import { openModal, closeModal, modalKeydown, modalClick } from './modal.js'
 import { askConfirm, bindConfirm } from './confirm.js'
@@ -67,7 +67,9 @@ function setupMenu(btnId, menuId) {
     if (open) (menu.querySelector('[aria-checked="true"]') || items()[0])?.focus()
   })
   document.addEventListener('click', e => { if (!menu.contains(e.target) && !btn.contains(e.target)) close() }, true)
-  menu.addEventListener('click', e => { if (e.target.closest('[role="menuitem"], [role="menuitemradio"]')) close() })
+  // Focus goes back to the button before the item's action runs: a dialog it opens returns there,
+  // and an action that removes nothing from view leaves the keyboard where it was.
+  menu.addEventListener('click', e => { if (e.target.closest('[role="menuitem"], [role="menuitemradio"]')) close(true) })
   menu.addEventListener('keydown', e => {
     const list = items(), i = list.indexOf(document.activeElement)
     const go = n => { e.preventDefault(); list[(n + list.length) % list.length]?.focus() }
@@ -112,8 +114,14 @@ function opened(message) {
 function runAction(action, el = null) {
   const id = el?.dataset.id
   switch (action) {
-    case 'undo': if (undo()) { closePop({ restore: false }); afterChange() } break
-    case 'redo': if (redo()) { closePop({ restore: false }); afterChange() } break
+    case 'undo': case 'redo': {
+      if (!(action === 'undo' ? undo() : redo())) break
+      ui.carry = null          // a carried share may not exist in the plan it came back to
+      closePop({ restore: false }); afterChange()
+      // The button pressed may now be disabled, and a disabled button drops focus: move to its twin, else the title.
+      if (el && el.disabled) ($(action === 'undo' ? 'redoBtn' : 'undoBtn').disabled ? $('planTitle') : $(action === 'undo' ? 'redoBtn' : 'undoBtn')).focus()
+      break
+    }
 
     // Plans
     case 'switch-plan':
@@ -144,7 +152,16 @@ function runAction(action, el = null) {
         confirm: 'Delete plan',
       }, () => {
         const title = d.title, kept = !isBlankPlan(d)
-        deletePlan()
+        if (deletePlan() === 'no-copy') {
+          // Storage refused the copy: say so, and delete only when asked again.
+          askConfirm({
+            title: `Delete ${title} without a copy?`,
+            body: 'This browser would not store a copy (storage full or blocked), so a delete now cannot be restored.',
+            safe: 'Export it as JSON first (Export > Plan file) if you might want it back.',
+            confirm: 'Delete without a copy',
+          }, () => { deletePlan(undefined, { withoutCopy: true }); opened(`Deleted ${title}`) })
+          return
+        }
         opened(kept ? `Deleted ${title}. Plans > Restore a deleted plan brings it back` : `Deleted ${title}`)
       })
       break
@@ -160,10 +177,10 @@ function runAction(action, el = null) {
         safe: `Ctrl+Z brings it all back${isBlankPlan(d) ? '' : ', and a copy is kept under Plans > Restore a deleted plan'}.`,
         confirm: 'Wipe plan',
       }, settings => {
-        keepPrevious(state.doc, 'wiped')
-        snapshot(); wipe({ settings }); ui.firstRun = false; ui.scope = 'plan'
+        const kept = !isBlankPlan(state.doc) && keepPrevious(state.doc, 'wiped')
+        snapshot(); wipe({ settings }); ui.firstRun = false; ui.scope = 'plan'; ui.carry = null
         afterChange()
-        showToast('Wiped. Ctrl+Z brings it back')
+        showToast(`Wiped. Ctrl+Z brings it back${kept ? ', and a copy is under Plans > Restore a deleted plan' : ''}`)
         // Focus stays where the dialog returns it: in the name field, Ctrl+Z would undo typing, not the wipe.
       })
       break
@@ -214,14 +231,14 @@ function runAction(action, el = null) {
 
     case 'edit-person': openPerson(id); break
     case 'remove-person': removeEditedPerson(); break
-    case 'remove-day-off': snapshot(); removeDayOff(el.dataset.date, el.dataset.code || ''); afterChange(); break
-    case 'work-holiday': snapshot(); setWorked(el.dataset.code, el.dataset.date, true); afterChange(); break
-    case 'unwork-holiday': snapshot(); setWorked(el.dataset.code, el.dataset.date, false); afterChange(); break
+    case 'remove-day-off': keepChipFocus(el, () => { snapshot(); removeDayOff(el.dataset.date, el.dataset.code || ''); afterChange() }); break
+    case 'work-holiday': keepChipFocus(el, () => { snapshot(); setWorked(el.dataset.code, el.dataset.date, true); afterChange() }); break
+    case 'unwork-holiday': keepChipFocus(el, () => { snapshot(); setWorked(el.dataset.code, el.dataset.date, false); afterChange() }); break
     case 'work-tagged': {
       // Every day of one kind (often worked, bridge days) in one country's plan, in one undo step.
       const c = el.dataset.code, days = taggedHolidays(state.doc, c, el.dataset.tag)
       if (!days.length) break
-      snapshot(); for (const d of days) setWorked(c, d, true); afterChange()
+      keepChipFocus(el, () => { snapshot(); for (const d of days) setWorked(c, d, true); afterChange() })
       showToast(`${plural(days.length, 'day')} in ${countryName(c)} now count as working days`)
       break
     }
@@ -234,8 +251,7 @@ function runAction(action, el = null) {
     case 'points': togglePop(`sp-${id}-${el.dataset.person}`, () => openShare(id, el.dataset.person)); break
     case 'unassign': {
       const p = person(el.dataset.person), d = deliverable(id)
-      snapshot(); unassign(id, el.dataset.person); afterChange()
-      showToast(`${p?.name || 'Person'} taken off ${d?.name || 'the deliverable'}`)
+      if (unassignPinned(id, el.dataset.person)) showToast(`${p?.name || 'Person'} taken off ${d?.name || 'the deliverable'}`)
       break
     }
     case 'drop': putDown(id); break
@@ -247,6 +263,19 @@ function runAction(action, el = null) {
     case 'show': show(el.dataset.kind, el.dataset.ids ? el.dataset.ids.split(',') : []); break
     case 'fix': applyFix(el.dataset.fix, el.dataset.arg, openEstimate); break
   }
+}
+
+/**
+ * A calendar chip's button rebuilds the chip list: keep the keyboard in it,
+ * on the button now at the same place, else the add-a-day-off date.
+ */
+function keepChipFocus(el, run) {
+  const all = () => [...document.querySelectorAll('#dayChips button')]
+  const at = all().indexOf(el)
+  run()
+  if (at < 0) return
+  const list = all()
+  ;(list[Math.min(at, list.length - 1)] || $('dayOffForm').elements.date).focus({ preventScroll: true })
 }
 
 /** A second click on the control that opened the popover closes it; any other opens its own. */
@@ -304,7 +333,7 @@ function onChange(e) {
 function onKey(e) {
   if (modalKeydown(e)) return
   const t = e.target
-  const typing = t.matches('input, textarea, select')
+  const typing = !!t.matches?.('input, textarea, select')      // a key sent to the document itself has no matches()
   if (e.key === 'Escape') {
     if (closePop()) { e.preventDefault(); return }
     if (cancelCarry()) { e.preventDefault(); return }
@@ -321,7 +350,7 @@ function onKey(e) {
   if (e.key === 'Enter' && typing && (t.dataset.field === 'name' || t.id === 'planTitle')) { t.blur(); return }
   // Explicit rather than implicit submission: synthetic Enters (automation, some IMEs) carry no keyCode.
   if (e.key === 'Enter' && t.form?.id === 'personForm') { e.preventDefault(); t.form.requestSubmit(); return }
-  if ((e.key === 'Enter' || e.key === ' ') && t.matches('[data-drag="person"]')) {
+  if ((e.key === 'Enter' || e.key === ' ') && t.matches?.('[data-drag="person"]')) {
     e.preventDefault()
     pickUp(t.dataset.person, t.dataset.from || null)
   }

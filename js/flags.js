@@ -28,6 +28,7 @@ const pts = n => `${n} pt${n === 1 ? '' : 's'}`
 
 /** "about 0.6 of an engineer", "about one engineer", "about 1.5 engineers". Shared with the cards and tiles. */
 export function engineers(points, unit) {
+  if (!unit) return 'not countable in engineers (a full-timer has 0 pts here)'
   const e = asEngineers(points, unit)
   if (e >= 1.05) return `about ${e} engineers`
   if (e >= 0.95) return 'about one engineer'
@@ -50,9 +51,10 @@ export function computeFlags(doc, a = analyze(doc)) {
   const unit = a.bookable || a.unit
   const s = doc.settings
 
-  // Who has the most room, for the fixes. Open roles go last.
+  // Who has the most room, for the fixes. Open roles go last. Role keys are worked out once:
+  // staffingFix runs for every short card, and a big plan made that quadratic in the sort.
   const byFree = doc.people
-    .map(p => ({ p, free: a.people.get(p.id).free }))
+    .map(p => ({ p, free: a.people.get(p.id).free, role: roleKey(p.role), count: a.people.get(p.id).count }))
     .filter(x => x.free > 0)
     .sort((x, y) => (x.p.open - y.p.open) || (y.free - x.free))
 
@@ -67,8 +69,10 @@ export function computeFlags(doc, a = analyze(doc)) {
     const topUp = byFree.filter(x => members.has(x.p.id) && !x.p.open)[0]
     if (topUp && gap > 0) return { action: 'topup', arg: `${d.id}:${topUp.p.id}`, label: `Give ${nameOf.get(topUp.p.id)} ${Math.min(gap, topUp.free)} more pts` }
     const roles = new Set(d.members.map(m => roleKey(byId.get(m.person)?.role)).filter(Boolean))
-    const pick = byFree.filter(x => !members.has(x.p.id))
-      .sort((x, y) => (x.p.open - y.p.open) || (roles.has(roleKey(y.p.role)) - roles.has(roleKey(x.p.role))) || (y.free - x.free))[0]
+    // Never someone already on SPREAD_LIMIT cards: adding them would raise "split across" and break
+    // the promise that a fix raises no new flag. Then hired first, whoever covers the whole gap, the role match, the most room.
+    const pick = byFree.filter(x => !members.has(x.p.id) && x.count < SPREAD_LIMIT)
+      .sort((x, y) => (x.p.open - y.p.open) || ((y.free >= gap) - (x.free >= gap)) || (roles.has(y.role) - roles.has(x.role)) || (y.free - x.free))[0]
     if (!pick) return undefined
     const role = pick.p.role.split(',')[0].trim()   // "QA, shared with Growth" reads as "QA"
     return { action: 'assign', arg: `${d.id}:${pick.p.id}`, label: `Add ${nameOf.get(pick.p.id)}${role && !roles.has(roleKey(role)) ? ` (${role})` : ''}` }
@@ -166,8 +170,9 @@ export function computeFlags(doc, a = analyze(doc)) {
   if (a.demand > a.capacity) {
     const gap = a.demand - a.capacity
     const hires = Math.min(10, Math.max(1, Math.ceil(gap / (unit || gap))))   // the fix adds at most 10 at a time
+    // No engineer unit (the calendar leaves a full-timer nothing): a new role would have nothing either, so no fix.
     add('error', 'people', `The plan needs ${pts(a.demand)} and the team has ${a.capacity}: short ${gap}, ${engineers(gap, unit)}${openN ? ` on top of ${plural(openN, 'open role')}` : ''}.`, null,
-      { action: 'open-roles', arg: String(hires), label: `Add ${hires} open role${hires === 1 ? '' : 's'}` })
+      unit ? { action: 'open-roles', arg: String(hires), label: `Add ${hires} open role${hires === 1 ? '' : 's'}` } : undefined)
   } else if (a.openCap && a.demand > a.hiredCap) {
     add('warn', 'people', `Without open roles the team has ${a.hiredCap} of the ${pts(a.demand)} planned: ${a.demand - a.hiredCap} depend on hiring.`, null)
   }

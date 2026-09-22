@@ -13,7 +13,8 @@ const DAY = 86400000
 export const parseISO = s => {
   if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
   const d = new Date(`${s}T00:00:00Z`)
-  return Number.isNaN(d.getTime()) ? null : d
+  // "2026-04-31" rolls over to 1 May in Date; a key that is not its own date would never match a day.
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? null : d
 }
 export const iso = d => d.toISOString().slice(0, 10)
 export const addDays = (d, n) => new Date(d.getTime() + n * DAY)

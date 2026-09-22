@@ -14,6 +14,7 @@ import { parseISO, addDays, iso } from './calendar.js'
 
 const UNDO_DEPTH = 40
 const MAX_LEAVE_DAYS = 3 * 366
+const MAX_ITEMS = 400          // people, and deliverables in the plan
 
 export const state = { doc: null, planId: null }   // set by plans.js loadSaved()
 
@@ -94,7 +95,8 @@ export function normalizeDoc(raw) {
     sprintCap: num(s.sprintCap, 0, 89, 0),
     sprints: num(Math.round(s.sprints), 1, 13, 4),
     buffer: num(s.buffer, 0, 50, 0),
-    rounding: s.rounding in ROUNDING ? s.rounding : 'nearest',
+    // Own keys only: `in` let '__proto__', 'toString' and ['up'] through, so the labels named a rule the maths never used.
+    rounding: typeof s.rounding === 'string' && Object.hasOwn(ROUNDING, s.rounding) ? s.rounding : 'nearest',
     // Public holidays a country's team works anyway: [{ country, date }].
     worked: dedupe((Array.isArray(s.worked) ? s.worked : [])
       .map(w => ({ country: code(w?.country), date: date(w?.date) })).filter(w => w.country && w.date), w => `${w.country}|${w.date}`).slice(0, 60),
@@ -107,12 +109,14 @@ export function normalizeDoc(raw) {
   let n = 0
   const fresh = pre => { let id; do id = `${pre}-${++n}`; while (seen.has(id) || taken.has(id)); return id }
   const taken = new Set([...raw.people, ...raw.deliverables, ...(Array.isArray(raw.backlog) ? raw.backlog : [])].map(x => safeId(x?.id)).filter(Boolean))
-  for (const p of raw.people) {
+  // A plan this size is already past what one page can plan; capping keeps a hostile link from hanging every render.
+  for (const p of raw.people.slice(0, MAX_ITEMS)) {
     if (!p || typeof p !== 'object') continue
     let id = safeId(p.id) || fresh('p')
     if (seen.has(id)) id = fresh('p')
     seen.add(id)
-    if (!idMap.has(String(p.id))) idMap.set(String(p.id), id)
+    // Only an id the input carried can be named by a member: a person with no id is not "undefined".
+    if (p.id != null && p.id !== '' && !idMap.has(String(p.id))) idMap.set(String(p.id), id)
     people.push({
       id, name: str(p.name), role: str(p.role),
       load: num(p.load ?? 100, 0, 100, 100),
@@ -129,7 +133,7 @@ export function normalizeDoc(raw) {
     seen.add(id)
     const members = []
     for (const m of Array.isArray(d.members) ? d.members : []) {
-      const pid = m && idMap.get(String(m.person))
+      const pid = m && m.person != null && m.person !== '' && idMap.get(String(m.person))
       if (!pid || members.some(x => x.person === pid)) continue
       // pct is the share of the person's capacity (dynamic); points is a fixed share from before percentages.
       if (m.pct != null && Number.isFinite(Number(m.pct))) members.push({ person: pid, pct: Math.round(num(m.pct, PCT_MIN, PCT_MAX, 100) * 100) / 100 })
@@ -138,7 +142,7 @@ export function normalizeDoc(raw) {
     const est = Number(d.estimate)
     return { id, name: str(d.name), note: str(d.note, 400), estimate: SCALE.includes(est) ? est : null, members }
   }
-  const deliverables = raw.deliverables.filter(d => d && typeof d === 'object').map(deliverable)
+  const deliverables = raw.deliverables.filter(d => d && typeof d === 'object').slice(0, MAX_ITEMS).map(deliverable)
   const backlog = (Array.isArray(raw.backlog) ? raw.backlog : []).filter(d => d && typeof d === 'object').slice(0, 500)
     .map(d => ({ ...deliverable(d), when: d.when === 'done' ? 'done' : 'later' }))
   const daysOff = []
