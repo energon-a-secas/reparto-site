@@ -163,3 +163,28 @@ test('exports carry the sprints, the estimated completion and the quarter', () =
   assert.match(md, /\*\*Calendar:\*\* Q1 FY27, starts 5 Oct 2026/)
   assert.match(md, /\| X \| 13 \| \d+ \| S1 to S2 \| \d+ (Oct|Nov) \|/)
 })
+
+test('changing a deliverable\'s sprints scales its estimate by default: nearest on the scale, and back again', async () => {
+  const { scaleEstimate } = await import('../js/capacity.js')
+  assert.equal(scaleEstimate(34, 4, 2), 21)          // 17, a tie between 13 and 21, goes up
+  assert.equal(scaleEstimate(21, 2, 4), 34)          // and doubling back returns to 34
+  assert.equal(scaleEstimate(55, 4, 2), 34)
+  assert.equal(scaleEstimate(34, 2, 4), 55)
+  assert.equal(scaleEstimate(13, 6, 2), 5)
+  assert.equal(scaleEstimate(8, 4, 4), 8, 'moving without resizing changes nothing')
+  assert.equal(scaleEstimate(null, 4, 2), null, 'unsized stays unsized')
+  assert.equal(scaleEstimate(233, 1, 13), 233, 'the scale tops out at 233')
+  assert.equal(scaleEstimate(1, 13, 1), 1, 'and bottoms out at 1')
+  // Halving is one step down the scale and doubling one step back up, from 5 on; at 1 and 3
+  // the halves are exact ties, so they come back as 2 and 5 (Ctrl+Z restores exactly).
+  for (const est of [2, 5, 8, 13, 21, 34, 55, 89, 144, 233]) {
+    assert.equal(scaleEstimate(scaleEstimate(est, 4, 2), 2, 4), est, `${est}: halve then double`)
+  }
+  // Same share of their time over half the sprints: the scaled estimate is still covered.
+  const doc = plan({}, [{}], [deliv('x', 34, [{ person: 'p0', pct: 100 }])])
+  doc.deliverables[0].window = { from: 1, to: 2 }
+  doc.deliverables[0].estimate = scaleEstimate(34, 4, 2)
+  const da = analyze(doc).deliverables.get('x')
+  assert.equal(da.got, 17)
+  assert.equal(doc.deliverables[0].estimate, 21)
+})

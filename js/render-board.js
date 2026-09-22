@@ -6,8 +6,8 @@
 // row and a card read the same.
 
 import { state, ui } from './state.js'
-import { flagIndex, deliverableStatus, landingText, sprintList } from './flags.js'
-import { spanLabel } from './timeline.js'
+import { flagIndex, deliverableStatus, landingText, sprintList, engineers } from './flags.js'
+import { spanLabel, spanLength } from './timeline.js'
 import { shareKey } from './capacity.js'
 import { renderTable } from './render-table.js'
 import { renderMap } from './render-map.js'
@@ -145,6 +145,17 @@ export function renderRoster(a, flags) {
 }
 
 // ── Board ────────────────────────────────────────────────────
+/** What a deliverable asks of the team: engineers at once over its own sprints ("About 1.6 engineers over 4 sprints"). */
+function need(d, da) {
+  const e = engineers(d.estimate, da.unitWindow)
+  return `${e[0].toUpperCase()}${e.slice(1)} over ${plural(spanLength(da.span), 'sprint')}`
+}
+/** The same in engineer-sprints, for the tooltip: 55 pts is 6.9 sprints of one engineer at 8 a sprint. */
+function needTitle(d, da, a) {
+  const sprints = d.estimate / (a.sprint || 1)
+  return `${d.estimate} pts is ${fmt(Math.round(sprints * 10) / 10)} ${sprints === 1 ? 'sprint' : 'sprints'} of one engineer's work at ${a.sprint} pts a sprint. Over its ${plural(spanLength(da.span), 'sprint')}${da.span.whole ? '' : ` (${spanLabel(da.span)})`} that is ${engineers(d.estimate, da.unitWindow)} at once, counting the calendar and the buffer.`
+}
+
 function meter(d, da) {
   if (!d.estimate) return '<div class="deliv-meter deliv-meter--unsized" aria-hidden="true"></div>'
   const top = Math.max(d.estimate, da.got)
@@ -239,15 +250,14 @@ export function renderBoard(a, flags) {
           <span class="est-num">${d.estimate ?? '?'}</span><span class="est-unit">pts</span>
         </button>
       </header>
-      <div class="deliv-planning">${priorityButton(d)}${progressButton(d)}</div>
+      <div class="deliv-planning">${priorityButton(d)}${progressButton(d)}${statusButton(d, st, da)}</div>
       ${meter(d, da)}
       <div class="deliv-timing">${timingButton(d, da)}</div>
-      ${statusButton(d, st, da)}
       <ul class="shares" aria-label="People on ${escHtml(name)}">${d.members.map(m => share(d, m, a)).join('')}</ul>
       ${d.members.length ? '' : `<p class="drop-hint">${icon('circle-plus', { size: 14 })}Drop people here</p>`}
       ${dropButton(d, da, carry)}
       <footer class="deliv-foot">
-        <span>${d.estimate ? `${fmt(d.estimate / (a.sprint || 1))} engineer-sprint${d.estimate === a.sprint ? '' : 's'}` : 'Unsized'} · ${da.got} booked</span>
+        <span title="${d.estimate ? escHtml(needTitle(d, da, a)) : ''}">${d.estimate ? escHtml(need(d, da)) : 'Unsized'} · ${da.got} booked</span>
         <button type="button" class="icon-btn" data-action="card-menu" data-id="${d.id}" data-key="dm-${d.id}" aria-haspopup="dialog"
           aria-label="More for ${escHtml(name)}: priority, progress, note, Later, Done, remove" title="Priority, progress, note, Later, Done, remove">${icon('ellipsis')}</button>
       </footer>

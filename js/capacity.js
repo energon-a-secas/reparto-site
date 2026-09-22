@@ -87,6 +87,19 @@ export function fibStep(n, dir) {
   return below.length ? below[below.length - 1] : 0
 }
 
+/**
+ * An estimate for a different number of sprints: the same people at the same
+ * share of their time do proportionally more or less, so a 34 over four
+ * sprints is 21 over two (17, nearest on the scale, ties up). Moving without
+ * resizing changes nothing. Nearest rather than up, so halving and then
+ * doubling back returns to the size it started at (34, 21, 34).
+ */
+export function scaleEstimate(estimate, fromSprints, toSprints) {
+  if (!estimate || !fromSprints || !toSprints || fromSprints === toSprints) return estimate
+  const n = fibNearest(Math.max(1, (estimate * toSprints) / fromSprints))
+  return Math.min(SCALE[SCALE.length - 1], n)
+}
+
 /** Preset horizons, derived from the sprint length: 12 weeks and 8 weeks. */
 export const horizons = s => [
   { key: 'quarter', label: 'Quarter', sprints: Math.max(1, Math.floor(12 / s.weeksPerSprint)) },

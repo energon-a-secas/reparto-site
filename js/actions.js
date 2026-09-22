@@ -3,8 +3,8 @@
 // keyboard carry and a flag's fix all land here, so they cannot disagree.
 
 import { state, ui, snapshot, commitFrom, person, deliverable, findDeliverable, assign, unassign, moveShare, setShare, addPerson, scaleShares, moveDeliverable, removeDeliverable, setWindow } from './state.js'
-import { analyze, shareKey, pctForPoints, trimShares, pinShares, freeIn } from './capacity.js'
-import { spanLabel } from './timeline.js'
+import { analyze, shareKey, pctForPoints, trimShares, pinShares, freeIn, scaleEstimate } from './capacity.js'
+import { spanLabel, spanOf, spanLength } from './timeline.js'
 import { cal } from './holidays.js'
 import { afterChange, renderAll } from './render.js'
 import { showToast, fmtPct } from './utils.js'
@@ -125,20 +125,28 @@ function keepOthers(delivId, change) {
 const WHEN = { plan: 'this plan', later: 'Later', done: 'Done' }
 
 /**
- * Run a deliverable over other sprints (window null is the whole plan). By
- * default each person keeps the points they give it, so fewer sprints mean a
- * bigger share of their time in them, and an overlap shows up as a sprint
- * over-booking; `keepPoints: false` keeps the percentages and lets the points
- * follow the span. Their other cards are pinned either way.
+ * Run a deliverable over other sprints (window null is the whole plan). What
+ * else changes is the `mode`:
+ *   'estimate' (default)  the estimate scales to the new number of sprints and
+ *                         each person keeps the same share of their time: a
+ *                         deliverable that needs less time needs fewer points
+ *   'points'              the estimate and each person's points stay, so fewer
+ *                         sprints take a bigger share of their time there
+ *   'none'                the estimate and the percentages stay; the points follow
+ * Their other cards are pinned either way.
  */
-export function changeWindow(delivId, window, { keepPoints = true } = {}) {
+export function changeWindow(delivId, window, { mode = 'estimate' } = {}) {
   const d = findDeliverable(delivId); if (!d) return false
   const inPlan = !!deliverable(delivId)
+  const n = state.doc.settings.sprints
+  const from = spanLength(spanOf(d, n)), to = spanLength(spanOf({ window }, n))
+  const was = d.estimate
   const a = analyze(state.doc, cal)
   const had = new Map(d.members.map(m => [m.person, a.shares.get(shareKey(delivId, m.person))?.points ?? 0]))
   const done = keepOthers(delivId, () => {
     if (!setWindow(delivId, window)) return false
-    if (keepPoints && inPlan) {
+    if (mode === 'estimate') d.estimate = scaleEstimate(d.estimate, from, to)
+    if (mode === 'points' && inPlan) {
       for (const m of deliverable(delivId).members) {
         if (m.pct == null || !had.get(m.person)) continue       // fixed points stay fixed; an empty share stays empty
         setShare(delivId, m.person, pctForPoints(state.doc, cal, delivId, m.person, had.get(m.person)))
@@ -149,9 +157,10 @@ export function changeWindow(delivId, window, { keepPoints = true } = {}) {
   if (!done) return false
   ui.carry = null
   const b = analyze(state.doc, cal)
-  const span = b.spans.get(delivId)
-  const who = inPlan ? d.members.map(m => `${nameOf(person(m.person))} ${fmtPct(b.shares.get(shareKey(delivId, m.person)).pct)}`) : []
-  showToast(`${d.name.trim() || 'The deliverable'} runs ${spanLabel(span)}${who.length ? `: ${who.join(', ')} of their time there` : ''}`)
+  const span = b.spans.get(delivId) || spanOf(d, n)
+  const est = was !== d.estimate ? `: estimate ${was} to ${d.estimate} pts` : ''
+  const who = inPlan && mode === 'points' ? d.members.map(m => `${nameOf(person(m.person))} ${fmtPct(b.shares.get(shareKey(delivId, m.person)).pct)}`) : []
+  showToast(`${d.name.trim() || 'The deliverable'} runs ${spanLabel(span)}${est}${who.length ? `: ${who.join(', ')} of their time there` : ''}`)
   return true
 }
 

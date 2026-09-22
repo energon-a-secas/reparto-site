@@ -3,10 +3,10 @@
 // is remembered by data-key, not by node, because every change re-renders.
 
 import { state, snapshot, commitFrom, deliverable, findDeliverable, person, updatePerson, updateDeliverable, setShare } from './state.js'
-import { SCALE, fibCeil, analyze, shareKey, pctForPoints, freeIn, PCT_MIN, PCT_MAX } from './capacity.js'
+import { SCALE, fibCeil, analyze, shareKey, pctForPoints, freeIn, scaleEstimate, PCT_MIN, PCT_MAX } from './capacity.js'
 import { engineers, landingText, sprintList } from './flags.js'
 import { sprintWindows, lastWorkday, fmtDay, fmtSpan, parseISO } from './calendar.js'
-import { spanLabel } from './timeline.js'
+import { spanLabel, spanOf, spanLength } from './timeline.js'
 import { cal } from './holidays.js'
 import { afterChange } from './render.js'
 import { moveTo, removeDeliverablePinned, unassignPinned, saveDeliverableDetails, changeWindow } from './actions.js'
@@ -88,6 +88,8 @@ const head = title => `<div class="pop-head"><strong>${escHtml(title)}</strong>
 export function openEstimate(delivId) {
   const d = findDeliverable(delivId); if (!d) return
   const s = state.doc.settings
+  // Worked out over the deliverable's own sprints, not the whole plan's.
+  const own = spanOf(d, s.sprints), ownLen = spanLength(own)
   const scale = [null, ...SCALE].map(v =>
     `<button type="button" class="scale-btn" data-pick="${v ?? ''}" aria-pressed="${d.estimate === v}" aria-label="${v ? `${v} points` : 'Unsized'}">${v ?? '?'}</button>`
   ).join('')
@@ -98,8 +100,8 @@ export function openEstimate(delivId) {
       <div class="pop-row">
         <input class="field field--num" type="number" min="0" max="20" step="0.5" value="1" data-in="eng" aria-label="Engineers">
         <span>engineers ×</span>
-        <input class="field field--num" type="number" min="0" max="13" step="1" value="${s.sprints}" data-in="spr" aria-label="Sprints">
-        <span>sprints</span>
+        <input class="field field--num" type="number" min="0" max="13" step="1" value="${ownLen}" data-in="spr" aria-label="Sprints">
+        <span>sprints${own.whole ? '' : ` (its ${escHtml(spanLabel(own))})`}</span>
         <output data-out="team"></output>
       </div>
       <div class="pop-row">
@@ -288,12 +290,17 @@ export function openWindow(delivId) {
       <label class="pop-label" for="winTo">To<select class="field" id="winTo">${toOpts}</select></label>
     </div>
     <div class="pop-row pop-row--wrap">${quick.map(([label, f, t]) => `<button type="button" class="chip-btn" data-win="${f}-${t}">${label}</button>`).join('')}</div>
-    <label class="check win-keep"><input type="checkbox" id="winKeep" checked> Keep each person's points: fewer sprints take a bigger share of their time</label>
+    <fieldset class="win-mode"><legend class="pop-label">With the new sprints</legend>
+      <label class="check"><input type="radio" name="winMode" value="estimate" checked> Scale the estimate: the same people give the same share of their time</label>
+      <label class="check"><input type="radio" name="winMode" value="points"> Keep the estimate and each person's points: a bigger share of their time</label>
+      <label class="check"><input type="radio" name="winMode" value="none"> Keep the estimate and each person's percentage</label>
+    </fieldset>
     <p class="pop-note" id="winPreview" aria-live="polite"></p>
     <div class="pop-row"><button type="button" class="btn btn--primary btn--sm" data-win="apply">Set sprints</button></div>`,
   `When ${name} runs`, '#winFrom')
   if (!pop) return
-  const from = pop.querySelector('#winFrom'), to = pop.querySelector('#winTo'), keep = pop.querySelector('#winKeep')
+  const from = pop.querySelector('#winFrom'), to = pop.querySelector('#winTo')
+  const mode = () => pop.querySelector('[name="winMode"]:checked').value
   const chosen = () => {
     let f = Number(from.value), t = Number(to.value)
     if (t < f) [f, t] = [t, f]
@@ -305,20 +312,23 @@ export function openWindow(delivId) {
     const next = structuredClone(state.doc)
     const nd = next.deliverables.find(x => x.id === delivId)
     const before = analyze(state.doc, cal)
+    const oldLen = spanLength(before.spans.get(delivId))
     nd.window = w
-    if (keep.checked) {
+    if (mode() === 'estimate') nd.estimate = scaleEstimate(d.estimate, oldLen, spanLength(spanOf(nd, s.sprints)))
+    if (mode() === 'points') {
       for (const m of nd.members) {
         const had = before.shares.get(shareKey(delivId, m.person))?.points
         if (m.pct != null && had) m.pct = pctForPoints(next, cal, delivId, m.person, had)
       }
     }
     const b = analyze(next, cal), db = b.deliverables.get(delivId)
+    const est = nd.estimate !== d.estimate ? ` Estimate ${d.estimate} to <strong>${nd.estimate} pts</strong>.` : d.estimate ? ` Estimate stays ${d.estimate} pts.` : ''
     const who = nd.members.map(m => {
       const p = person(m.person), sh = b.shares.get(shareKey(delivId, m.person)), pa = b.people.get(m.person)
       const over = pa.overSprints.filter(i => i >= db.span.a && i <= db.span.b)
       return `${escHtml(p?.name.trim() || 'Unnamed')} ${sh.points} pts, ${fmtPct(sh.pct)} of their time there${over.length ? ` <span class="error-text">(over-booked in ${sprintList(over)})</span>` : ''}`
     })
-    pop.querySelector('#winPreview').innerHTML = `${escHtml(spanLabel(db.span))}.${who.length ? ` ${who.join('; ')}.` : ''} ${escHtml(landingText(db.lands, s, db.span).text)}.`
+    pop.querySelector('#winPreview').innerHTML = `${escHtml(spanLabel(db.span))}.${est}${who.length ? ` ${who.join('; ')}.` : ''} ${escHtml(landingText(db.lands, s, db.span).text)}.`
     repositionPop()
   }
   pop.addEventListener('change', e => { if (e.target.matches('select, input')) preview() })
@@ -331,7 +341,7 @@ export function openWindow(delivId) {
       from.value = String(f); to.value = String(t); preview(); return
     }
     closePop()
-    changeWindow(delivId, chosen(), { keepPoints: keep.checked })
+    changeWindow(delivId, chosen(), { mode: mode() })
   }
 }
 
