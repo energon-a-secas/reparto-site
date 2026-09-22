@@ -8,8 +8,9 @@
 //   target { kind: 'deliverable' | 'person' | 'settings', ids: [] } or null
 //   fix    { action, arg, label } or undefined
 
-import { analyze, asEngineers } from './capacity.js'
-import { planRange, parseISO, fmtSpan } from './calendar.js'
+import { analyze, asEngineers, freeIn } from './capacity.js'
+import { planRange, parseISO, fmtSpan, fmtDay } from './calendar.js'
+import { spanLabel } from './timeline.js'
 
 const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`
 
@@ -36,6 +37,38 @@ export function engineers(points, unit) {
   return `about ${e} of an engineer`
 }
 
+/** Sprint numbers as a reader says them: "S2", "S1 and S2", "S1 to S3, S5". Indices are 0-based. */
+export function sprintList(indices) {
+  const runs = []
+  for (const i of [...indices].sort((x, y) => x - y)) {
+    const last = runs[runs.length - 1]
+    if (last && i === last[1] + 1) last[1] = i; else runs.push([i, i])
+  }
+  const say = ([x, y]) => (x === y ? `S${x + 1}` : y === x + 1 ? `S${x + 1} and S${y + 1}` : `S${x + 1} to S${y + 1}`)
+  return runs.map(say).join(', ')
+}
+
+/**
+ * When a deliverable lands, in words the card, the table, the map and the
+ * exports share: { short, text, late, afterPlan, date }. `short` fits a cell
+ * ("13 Nov", "~9 Jan 2027"); `text` is the sentence.
+ */
+export function landingText(lands, s, span = null) {
+  const start = parseISO(s.startDate)
+  const day = d => fmtDay(d, !start || d.getUTCFullYear() !== start.getUTCFullYear())
+  const where = span && !span.whole ? spanLabel(span) : 'the plan'
+  switch (lands?.kind) {
+    case 'on-time': return { short: day(lands.date), text: `Lands ${day(lands.date)}, in S${lands.sprint + 1}`, date: lands.date, late: false }
+    case 'late': return {
+      short: `~${day(lands.date)}`, date: lands.date, late: true, afterPlan: lands.afterPlan,
+      text: `At this pace it lands about ${day(lands.date)}, after ${lands.afterPlan ? 'the plan ends' : where}`,
+    }
+    case 'far': return { short: 'Not in sight', text: 'At this pace it does not land within two years', late: true, afterPlan: true }
+    case 'none': return { short: 'No date', text: 'No date: nobody is on it yet' }
+    default: return { short: 'No date', text: 'No date until it is sized' }
+  }
+}
+
 // Country names in English whatever the browser's language, like the rest of the page.
 const REGION = typeof Intl !== 'undefined' && Intl.DisplayNames ? new Intl.DisplayNames(['en'], { type: 'region' }) : null
 const countryLabel = code => { try { return REGION?.of(code) || code } catch { return code } }
@@ -51,12 +84,11 @@ export function computeFlags(doc, a = analyze(doc)) {
   const unit = a.bookable || a.unit
   const s = doc.settings
 
-  // Who has the most room, for the fixes. Open roles go last. Role keys are worked out once:
-  // staffingFix runs for every short card, and a big plan made that quadratic in the sort.
+  // Everyone, hired before open roles, for the fixes. Role keys are worked out once: staffingFix
+  // runs for every short card, and a big plan made that quadratic in the sort. Room is per span.
   const byFree = doc.people
-    .map(p => ({ p, free: a.people.get(p.id).free, role: roleKey(p.role), count: a.people.get(p.id).count }))
-    .filter(x => x.free > 0)
-    .sort((x, y) => (x.p.open - y.p.open) || (y.free - x.free))
+    .map(p => ({ p, pa: a.people.get(p.id), role: roleKey(p.role) }))
+    .sort((x, y) => (x.p.open - y.p.open) || (y.pa.free - x.pa.free))
 
   /**
    * The fix for a deliverable that needs more: first give more to someone
@@ -65,13 +97,18 @@ export function computeFlags(doc, a = analyze(doc)) {
    * matches nobody on the card, so "Add Elena Torres (QA)" is a choice, not a surprise.
    */
   function staffingFix(d, gap) {
+    const span = a.spans.get(d.id)
     const members = new Set(d.members.map(m => m.person))
-    const topUp = byFree.filter(x => members.has(x.p.id) && !x.p.open)[0]
+    // Room is what someone has free in this deliverable's sprints, not across the quarter.
+    const withRoom = byFree.map(x => ({ ...x, free: freeIn(x.pa, span) })).filter(x => x.free > 0)
+    const topUp = withRoom.filter(x => members.has(x.p.id) && !x.p.open).sort((x, y) => y.free - x.free)[0]
     if (topUp && gap > 0) return { action: 'topup', arg: `${d.id}:${topUp.p.id}`, label: `Give ${nameOf.get(topUp.p.id)} ${Math.min(gap, topUp.free)} more pts` }
     const roles = new Set(d.members.map(m => roleKey(byId.get(m.person)?.role)).filter(Boolean))
-    // Never someone already on SPREAD_LIMIT cards: adding them would raise "split across" and break
-    // the promise that a fix raises no new flag. Then hired first, whoever covers the whole gap, the role match, the most room.
-    const pick = byFree.filter(x => !members.has(x.p.id) && x.count < SPREAD_LIMIT)
+    // Never someone already on SPREAD_LIMIT cards at once in these sprints: adding them would raise
+    // "split across" and break the promise that a fix raises no new flag. Then hired first, whoever
+    // covers the whole gap, the role match, the most room.
+    const atOnce = x => { let m = 0; for (let i = span.a; i <= span.b; i++) m = Math.max(m, x.pa.active[i]); return m }
+    const pick = withRoom.filter(x => !members.has(x.p.id) && atOnce(x) < SPREAD_LIMIT)
       .sort((x, y) => (x.p.open - y.p.open) || ((y.free >= gap) - (x.free >= gap)) || (roles.has(y.role) - roles.has(x.role)) || (y.free - x.free))[0]
     if (!pick) return undefined
     const role = pick.p.role.split(',')[0].trim()   // "QA, shared with Growth" reads as "QA"
@@ -114,14 +151,21 @@ export function computeFlags(doc, a = analyze(doc)) {
     const t = { kind: 'deliverable', ids: [d.id] }
     const label = d.name.trim() || 'Untitled deliverable'
     const da = a.deliverables.get(d.id)
+    const span = da.span, when = span.whole ? '' : ` in ${spanLabel(span)}`
     if (!d.name.trim()) add('warn', 'data', 'A deliverable has no name.', t)
     if (!d.estimate) add('error', 'data', `${label} has no estimate. Size it on the Fibonacci scale.`, t, { action: 'size', arg: d.id, label: 'Size it' })
+    if (span.clamped) {
+      add('warn', 'data', `${label} is set for S${d.window.from} to S${d.window.to}, past this plan's ${plural(s.sprints, 'sprint')}, so it runs in ${spanLabel(span, { whole: false })}.`, t,
+        { action: 'window', arg: d.id, label: 'Change its sprints' })
+    }
     if (!d.members.length) {
-      add('error', 'people', `Nobody is on ${label}${d.estimate ? ` (${pts(d.estimate)})` : ''}.`, t, staffingFix(d, d.estimate || 0))
+      add('error', 'people', `Nobody is on ${label}${d.estimate ? ` (${pts(d.estimate)}${when})` : ''}.`, t, staffingFix(d, d.estimate || 0))
     } else if (da.gap > 0) {
       // Say when leave made it short: "Ana's vacation (19 to 23 Oct) takes 4" is a different conversation from a missing hire.
       const why = da.leavePts ? ` ${da.leavePts >= da.gap ? 'Leave explains it' : `Leave explains ${pts(da.leavePts)} of it`}: ${leaveLines(da, doc, a).join('; ')}.` : ''
-      add('error', 'people', `${label} is short ${pts(da.gap)}, ${engineers(da.gap, unit)}.${why}`, t, staffingFix(d, da.gap))
+      // And when it would land at the pace it has: the date is what a stakeholder asks for.
+      const lands = da.lands.kind === 'late' || da.lands.kind === 'far' ? ` ${landingText(da.lands, s, span).text}.` : ''
+      add('error', 'people', `${label} is short ${pts(da.gap)}${when}, ${engineers(da.gap, da.unitWindow || unit)}.${why}${lands}`, t, staffingFix(d, da.gap))
     } else if (d.estimate && da.gap < 0) {
       add('warn', 'load', `${label} has ${pts(-da.gap)} more than its estimate.`, t, { action: 'trim', arg: d.id, label: 'Trim to fit' })
     }
@@ -129,9 +173,9 @@ export function computeFlags(doc, a = analyze(doc)) {
     if (open.length) {
       add('warn', 'people', `${label} relies on ${open.map(m => nameOf.get(m.person)).join(' and ')}, not hired yet.`, t)
     }
-    // A big deliverable is fine once it has a team; the warning is about one person carrying it.
-    if (unit && d.estimate > unit && d.members.length < 2) {
-      add('warn', 'practice', `${label} (${pts(d.estimate)}) is bigger than one engineer's whole plan (${pts(unit)}). Split it, or put more than one person on it.`, t)
+    // A big deliverable is fine once it has a team; the warning is about one person carrying it in its sprints.
+    if (da.unitWindow && d.estimate > da.unitWindow && d.members.length < 2) {
+      add('warn', 'practice', `${label} (${pts(d.estimate)}) is bigger than one engineer's ${span.whole ? 'whole plan' : spanLabel(span)} (${pts(da.unitWindow)}). Split it, give it more sprints, or put more than one person on it.`, t)
     }
   }
 
@@ -142,13 +186,23 @@ export function computeFlags(doc, a = analyze(doc)) {
     const name = nameOf.get(p.id)
     if (!p.name.trim()) add('warn', 'data', 'Someone on the team has no name.', t)
     if (!pa.cap) add('warn', 'data', `${name} has no capacity in this plan (load or sprints away).`, t)
-    if (pa.free < 0) {
+    if (pa.over) {
       // `also`: the cards this person is on carry the badge too, so a green card cannot hide it.
       const on = doc.deliverables.filter(d => d.members.some(m => m.person === p.id)).map(d => d.id)
-      add('error', 'load', `${name} is booked ${Math.round(pa.pct)}% of their capacity (${pa.used} of ${pts(pa.cap)}), ${-pa.free} over.`, { ...t, also: on },
-        pa.pct > 0 ? { action: 'rebalance', arg: p.id, label: `Scale ${name} to 100%` } : undefined)
+      // Over across the quarter, or over in some sprints while the quarter adds up (two deliverables on the same sprints).
+      const worst = pa.overSprints.reduce((m, i) => Math.max(m, pa.sprintCap[i] ? (pa.booked[i] / pa.sprintCap[i]) * 100 : 0), 0)
+      const text = pa.free < 0
+        ? `${name} is booked ${Math.round(pa.pct)}% of their capacity (${pa.used} of ${pts(pa.cap)}), ${-pa.free} over.`
+        : `${name} is booked ${Math.round(worst)}% of their time in ${sprintList(pa.overSprints)}, ${pts(pa.overPts)} over. Move one of their deliverables to other sprints, or lower a share.`
+      add('error', 'load', text, { ...t, also: on },
+        pa.peak > 0 ? { action: 'rebalance', arg: p.id, label: `Scale ${name} to 100%` } : undefined)
     }
-    if (pa.count > SPREAD_LIMIT) add('warn', 'practice', `${name} is split across ${pa.count} deliverables. Every switch costs focus.`, t)
+    // Context switching is about deliverables at the same time: four in a row is a sequence, not a split.
+    if (pa.concurrent > SPREAD_LIMIT) {
+      add('warn', 'practice', pa.concurrent === pa.count
+        ? `${name} is split across ${pa.count} deliverables. Every switch costs focus.`
+        : `${name} is on ${pa.concurrent} deliverables at once in ${sprintList(pa.active.map((x, i) => (x === pa.concurrent ? i : -1)).filter(i => i >= 0))}. Every switch costs focus.`, t)
+    }
   }
 
   const idle = doc.people.filter(p => a.people.get(p.id).free > 0 && a.people.get(p.id).cap > 0)
@@ -213,7 +267,7 @@ export function missingPeople(doc, a) {
   const hired = doc.people.filter(p => !p.open)
   const points = Math.max(0, a.demand - a.hiredCap)
   const freeHired = hired.filter(p => a.people.get(p.id).free > 0).map(p => ({ name: p.name.trim() || 'Unnamed', free: a.people.get(p.id).free }))
-  const overPeople = doc.people.filter(p => a.people.get(p.id).free < 0).map(p => ({ name: p.name.trim() || 'Unnamed', over: -a.people.get(p.id).free }))
+  const overPeople = doc.people.filter(p => a.people.get(p.id).over).map(p => ({ name: p.name.trim() || 'Unnamed', over: a.people.get(p.id).overPts }))
   const sized = doc.deliverables.some(d => d.estimate)
   return {
     points,
@@ -237,11 +291,16 @@ export function deliverableStatus(d, da, a, doc) {
   const unit = a.bookable || a.unit
   if (!d.estimate) return { cls: 'unsized', icon: '?', text: da.got ? `Unsized · ${da.got} pts booked` : 'Unsized: pick a Fibonacci size' }
   if (!d.members.length) return { cls: 'empty', icon: '!', text: `Nobody on it · needs ${d.estimate}` }
-  if (da.gap > 0) return { cls: 'short', icon: '!', text: `Short ${da.gap} · ${engineers(da.gap, unit)}`, leave: da.leavePts || 0 }
+  if (da.gap > 0) return { cls: 'short', icon: '!', text: `Short ${da.gap} · ${engineers(da.gap, da.unitWindow || unit)}`, leave: da.leavePts || 0 }
   if (da.gap < 0) return { cls: 'over', icon: '↑', text: `${-da.gap} over the estimate` }
   const people = new Map(doc.people.map(p => [p.id, p]))
-  const busy = d.members.map(m => m.person).find(id => (a.people.get(id)?.free ?? 0) < 0)
-  if (busy) return { cls: 'risk', icon: '!', text: `Staffed, but ${people.get(busy)?.name.trim() || 'Unnamed'} is ${-a.people.get(busy).free} over`, risk: true }
+  // Over-booked across the quarter, or in any sprint of this deliverable's span.
+  const span = da.span
+  const busy = d.members.map(m => m.person).find(id => {
+    const pa = a.people.get(id)
+    return pa && (pa.free < 0 || pa.overSprints.some(i => !span || (i >= span.a && i <= span.b)))
+  })
+  if (busy) return { cls: 'risk', icon: '!', text: `Staffed, but ${people.get(busy)?.name.trim() || 'Unnamed'} is ${a.people.get(busy).overPts} over`, risk: true }
   const open = d.members.map(m => people.get(m.person)).find(p => p?.open)
   if (open) return { cls: 'risk', icon: '!', text: `Staffed by ${open.name.trim() || 'an open role'}, not hired yet`, risk: true }
   return { cls: 'ok', icon: '✓', text: 'Staffed' }

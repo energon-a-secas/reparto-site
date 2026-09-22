@@ -11,7 +11,7 @@ import { onHolidays, loadIndex } from './holidays.js'
 import { showToast } from './utils.js'
 
 function init() {
-  try { if (localStorage.getItem('reparto-v1-view') === 'table') ui.view = 'table' } catch { /* a convenience only */ }
+  try { const v = localStorage.getItem('reparto-v1-view'); if (v === 'table' || v === 'map') ui.view = v } catch { /* a convenience only */ }
   const hadPlan = loadSaved()
   const shared = loadFromHash()      // a first visit's untouched example is not stored, so the link is the only plan
   onHolidays(renderAll)

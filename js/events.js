@@ -16,7 +16,8 @@ import { bindPersonEditor, openPerson, removeEditedPerson } from './person-edito
 import { afterChange, renderAll } from './render.js'
 import { bindDnd, justDragged } from './dnd.js'
 import { pickUp, putDown, cancelCarry, applyFix, show, moveTo, removeDeliverablePinned, unassignPinned } from './actions.js'
-import { openEstimate, openShare, openCardMenu, closePop, popAnchor, repositionPop } from './popover.js'
+import { openEstimate, openShare, openCardMenu, openWindow, openVacation, closePop, popAnchor, repositionPop } from './popover.js'
+import { bindMapEdit } from './map-edit.js'
 import { openModal, closeModal, modalKeydown, modalClick } from './modal.js'
 import { askConfirm, bindConfirm } from './confirm.js'
 import { runExport, importFile } from './io.js'
@@ -29,6 +30,7 @@ export function bindEvents() {
   // Static icons: <span data-icon="name"> in the page shell becomes the SVG.
   document.querySelectorAll('[data-icon]').forEach(el => { el.outerHTML = icon(el.dataset.icon) })
   bindDnd()
+  bindMapEdit()
   bindTooltips()
   setupMenu('plansBtn', 'plansMenu')
   setupMenu('exportBtn', 'exportMenu')
@@ -90,7 +92,7 @@ function onClick(e) {
   hideTooltip()
   modalClick(e)
   const pop = $('pop')
-  if (!pop.hidden && !pop.contains(t) && !t.closest('[data-action="estimate"], [data-action="points"], [data-action="card-menu"], [data-action="deliverable-details"]')) closePop({ restore: false })
+  if (!pop.hidden && !pop.contains(t) && !t.closest('[data-action="estimate"], [data-action="points"], [data-action="card-menu"], [data-action="deliverable-details"], [data-action="window"], [data-action="map-vacation"]')) closePop({ restore: false })
   if (justDragged()) return
 
   const exp = t.closest('[data-export]')
@@ -266,6 +268,11 @@ function runAction(action, el = null) {
       break
     }
     case 'estimate': togglePop(`de-${id}`, () => openEstimate(id)); break
+    case 'window':
+      // From the flags dialog: close it and bring the deliverable into view, where the picker anchors.
+      if (!$('flagsModal').hidden) { closeModal('flagsModal'); show('deliverable', [id], { instant: true }) }
+      togglePop(`dt-${id}`, () => openWindow(id)); break
+    case 'map-vacation': togglePop(`mv-${el.dataset.person}-${el.dataset.index}`, () => openVacation(el.dataset.person, Number(el.dataset.index))); break
     case 'deliverable-details': togglePop(el.dataset.key, () => openCardMenu(id, { anchor: el.dataset.key, focus: el.dataset.field })); break
     case 'points': togglePop(`sp-${id}-${el.dataset.person}`, () => openShare(id, el.dataset.person)); break
     case 'unassign': {
@@ -285,7 +292,7 @@ function runAction(action, el = null) {
     case 'fix':
       if (!$('flagsModal').hidden) closeModal('flagsModal')
       ui.personFilter = ''
-      applyFix(el.dataset.fix, el.dataset.arg, openEstimate); break
+      applyFix(el.dataset.fix, el.dataset.arg, { estimate: openEstimate, window: openWindow }); break
   }
 }
 
@@ -332,6 +339,11 @@ function onChange(e) {
   }
   if (t.id === 'personFilter') {
     ui.personFilter = t.value; ui.carry = null; renderAll(); return
+  }
+  if (t.id === 'planQuarter') {
+    // A quarter is a start date: its first Monday. The number of sprints stays as the team set it.
+    if (parseISO(t.value)) setAndRender('startDate', t.value)
+    return
   }
   if (t.id === 'addCountry') {
     if (t.value) setCountries([...state.doc.settings.countries, t.value])

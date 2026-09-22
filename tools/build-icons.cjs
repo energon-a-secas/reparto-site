@@ -31,6 +31,8 @@ const NAMES = [
   'layout-grid', 'table-2', 'chevron-up', 'chevron-down', 'arrow-up-down',
   // workspace navigation and settings
   'flag', 'sliders-horizontal', 'calendar-days', 'chevron-right',
+  // timing, the map and landing dates
+  'calendar-range', 'chart-gantt', 'diamond', 'calendar-plus', 'plane-landing',
 ]
 
 const out = {}

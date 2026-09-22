@@ -1038,3 +1038,128 @@ select.field { appearance: none; padding-right: 32px; background-image: url("dat
   .priority-tag, .progress-tag { min-height: 32px; }
   .board-sort .field, .pop-planning-fields .field { font-size: 16px; }
 }
+
+/* ── Quarters, sprints a deliverable runs in, landing dates ─── */
+.plan-quarter { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 4px; font: 600 13px/1.4 var(--planner-font); color: var(--accent-bright); }
+.plan-quarter span { font-weight: 500; color: var(--planner-muted); }
+.plan-quarter:empty { display: none; }
+.period-fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
+.field.field--quarter { width: auto; min-width: 230px; }
+.field.field--fiscal { width: auto; min-width: 190px; }
+
+.deliv-timing { display: flex; }
+.timing {
+  display: inline-flex; align-items: center; gap: 7px; max-width: 100%; min-height: 30px; padding: 4px 8px; margin-left: -8px;
+  font: 500 12px/1.3 var(--planner-font); color: var(--text-secondary);
+  background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.timing:hover, .timing:focus-visible { background: var(--surface-2); border-color: var(--border); }
+.timing > .ico { color: var(--planner-muted); }
+.timing-lands { display: inline-flex; align-items: center; gap: 4px; padding-left: 7px; border-left: 1px solid var(--border); color: var(--ok); font-variant-numeric: tabular-nums; }
+.timing--slip .timing-lands { color: var(--warn); }
+.timing--late .timing-lands { color: var(--err); }
+.timing--compact { margin-left: 0; }
+.dtable .t-when { width: 1%; white-space: nowrap; }
+.dtable .t-lands { width: 1%; white-space: nowrap; }
+.lands { display: inline-flex; align-items: center; gap: 5px; font: 500 13px/1.3 var(--planner-font); font-variant-numeric: tabular-nums; }
+.lands--ok { color: var(--ok); }
+.lands--slip { color: var(--warn); }
+.lands--late { color: var(--err); }
+.lands--none { color: var(--planner-muted); }
+.win-row .pop-label { flex: 1 1 140px; display: flex; flex-direction: column; gap: 4px; }
+.win-keep { font-size: var(--text-xs); line-height: 1.4; align-items: flex-start; }
+.win-keep input { margin-top: 1px; }
+
+/* ── The map ───────────────────────────────────────────────── */
+.map-wrap { position: relative; overflow-x: auto; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); }
+.map {
+  --map-label: 190px;
+  position: relative; min-width: calc(var(--map-label) + var(--map-days) * 7px);
+  font: 500 12px/1.3 var(--planner-font);
+}
+.map-head { position: sticky; top: 0; z-index: 3; display: grid; grid-template-columns: var(--map-label) 1fr; background: var(--planner-raised); border-bottom: 1px solid var(--border); }
+.map-row { position: relative; z-index: 1; display: grid; grid-template-columns: var(--map-label) 1fr; min-height: 44px; border-bottom: 1px solid var(--border-subtle); }
+.map-label {
+  position: sticky; left: 0; z-index: 2; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 10px;
+  background: var(--planner-surface); border-right: 1px solid var(--border);
+}
+.map-head .map-label { background: var(--planner-raised); }
+.map-label--quarter { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; grid-row: span 2; }
+.map-label--quarter strong { font-size: 15px; color: var(--accent-bright); }
+.map-label--quarter span { color: var(--planner-muted); font-size: 11px; }
+.map-label--sub { display: none; }
+.map-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.map-est { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.map-edit { width: 26px; height: 26px; }
+.map-row--person .map-label { cursor: grab; }
+.map-track { position: relative; min-width: 0; }
+.map-months { height: 28px; }
+.map-sprints { height: 34px; border-top: 1px solid var(--border-subtle); }
+.map-month, .map-sprint { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px; overflow: hidden; white-space: nowrap; border-left: 1px solid var(--border); }
+.map-month { font-weight: 600; color: var(--text-primary); }
+.map-sprint b { color: var(--accent-bright); }
+.map-sprint span { color: var(--planner-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.map-sprint--after b { color: var(--planner-muted); }
+.map-body { position: relative; }
+.map-grid { position: absolute; top: 0; bottom: 0; left: var(--map-label); right: 0; pointer-events: none; }
+.map-weekend { position: absolute; top: 0; bottom: 0; background: rgba(255, 255, 255, .025); }
+.map-line { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--border); }
+.map-line--quarter { border-left: 2px solid color-mix(in oklch, var(--accent) 55%, transparent); }
+.map-line--quarter span { position: absolute; top: 2px; left: 4px; font-size: 10px; font-weight: 700; color: var(--accent-bright); }
+.map-after { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .035) 0 6px, transparent 6px 12px); }
+.map-today { position: absolute; top: 0; bottom: 0; border-left: 2px solid var(--info); }
+.map-today span { position: absolute; top: 2px; left: 4px; font-size: 10px; font-weight: 700; color: var(--info); }
+.map-section { position: relative; z-index: 1; display: flex; align-items: baseline; gap: 8px; padding: 10px 12px 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--planner-muted); background: var(--planner-surface); border-bottom: 1px solid var(--border-subtle); }
+.map-section .ico { align-self: center; }
+.map-section small { font-size: 11px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.map-empty { position: relative; z-index: 1; padding: 10px 12px; color: var(--planner-muted); background: var(--planner-surface); }
+.map-off { position: absolute; top: 6px; bottom: 16px; border-radius: 3px; }
+.map-off--holiday { background: color-mix(in oklch, var(--info) 35%, transparent); }
+.map-off--team { background: color-mix(in oklch, var(--accent) 35%, transparent); }
+.map-vac {
+  position: absolute; top: 6px; bottom: 16px; display: flex; align-items: center; gap: 4px; min-width: 6px; padding: 0 6px; overflow: hidden;
+  font: 600 11px/1 var(--planner-font); color: oklch(22% 0.03 82); white-space: nowrap;
+  background: var(--warn); border: 0; border-radius: 4px; cursor: pointer;
+}
+.map-vac:hover, .map-vac:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 1px; }
+.map-load { position: absolute; bottom: 3px; height: 9px; display: flex; align-items: center; justify-content: center; border-radius: 2px; border-left: 2px solid var(--planner-surface); }
+.map-load b { font-size: 9px; font-weight: 700; line-height: 1; color: oklch(20% 0.02 260); }
+.map-load--idle { background: var(--surface-2); }
+.map-load--idle b { color: var(--planner-muted); }
+.map-load--some { background: color-mix(in oklch, var(--ok) 55%, transparent); }
+.map-load--full { background: var(--ok); }
+.map-load--over { background: var(--err); }
+.map-ghost { position: absolute; top: 6px; bottom: 16px; border-radius: 4px; background: color-mix(in oklch, var(--warn) 45%, transparent); outline: 1px dashed var(--warn); pointer-events: none; }
+.map-row--deliv .map-track { min-height: 44px; }
+.map-bar {
+  position: absolute; top: 8px; bottom: 8px; display: flex; align-items: center; overflow: hidden; padding: 0; min-width: 8px;
+  font: 600 11px/1 var(--planner-font); color: var(--text-primary);
+  background: color-mix(in oklch, var(--st, var(--accent)) 16%, var(--surface-2)); border: 1px solid color-mix(in oklch, var(--st, var(--accent)) 55%, transparent); border-radius: 6px; cursor: grab;
+}
+.map-bar:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.map-bar--unsized { border-style: dashed; }
+.map-fill { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in oklch, var(--st, var(--accent)) 30%, transparent); pointer-events: none; }
+.map-bar-text { position: relative; flex: 1; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.map-handle { position: relative; z-index: 1; flex: none; width: 8px; align-self: stretch; cursor: ew-resize; }
+.map-handle:hover { background: color-mix(in oklch, var(--st, var(--accent)) 45%, transparent); }
+.map-land { position: absolute; top: 50%; z-index: 1; display: flex; align-items: center; gap: 3px; transform: translate(-6px, -50%); color: var(--ok); font: 700 11px/1 var(--planner-font); white-space: nowrap; pointer-events: none; }
+.map-land .ico { fill: currentColor; }
+.map-land span { padding: 2px 4px; background: var(--planner-surface); border-radius: 3px; }
+.map-land--slip { color: var(--warn); }
+.map-land--late { color: var(--err); }
+.map-land--flip { flex-direction: row-reverse; transform: translate(calc(-100% + 6px), -50%); }
+.map-month em { margin-left: 6px; font-style: normal; font-size: 10px; font-weight: 700; color: var(--accent-bright); }
+.map-row--deliv.drop-target { background: color-mix(in oklch, var(--accent) 10%, transparent); }
+body.is-map-dragging, body.is-map-dragging * { cursor: grabbing !important; user-select: none; }
+.map-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 12px; font: 500 11px/1.3 var(--planner-font); color: var(--planner-muted); }
+.map-key { display: inline-block; width: 12px; height: 10px; margin-right: -8px; border-radius: 2px; vertical-align: -1px; }
+.map-key--holiday { background: color-mix(in oklch, var(--info) 35%, transparent); }
+.map-key--team { background: color-mix(in oklch, var(--accent) 35%, transparent); }
+.map-key--vac { background: var(--warn); }
+.map-key--over { background: var(--err); }
+@media (max-width: 760px) {
+  .map { --map-label: 128px; min-width: calc(var(--map-label) + var(--map-days) * 7px); }
+  .map-section small { display: none; }
+  .field.field--quarter, .field.field--fiscal { min-width: 0; width: 100%; }
+  .period-fields .cal-field { flex: 1 1 100%; }
+}

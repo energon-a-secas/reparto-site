@@ -142,6 +142,7 @@
             <input class="plan-title" id="planTitle" data-key="plan-title" aria-label="Plan name" maxlength="80" title="Rename this plan">
             <span data-icon="pencil"></span>
           </label>
+          <p class="plan-quarter" id="planQuarterLabel"></p>
         </div>
         <nav class="workspace-nav" aria-label="Jump to a section">
           <a href="#roster"><span data-icon="users"></span>Team</a>
@@ -173,9 +174,17 @@
           <div class="cal-controls">
             <div class="calendar-period">
               <h2 class="editor-heading">Plan dates</h2>
-              <label class="cal-field">First day of the plan
-                <input type="date" class="field field--date" id="startDate" data-setting="startDate" required>
-              </label>
+              <div class="period-fields">
+                <label class="cal-field">Quarter
+                  <select class="field field--quarter" id="planQuarter" aria-describedby="calRange"></select>
+                </label>
+                <label class="cal-field">First day of the plan
+                  <input type="date" class="field field--date" id="startDate" data-setting="startDate" required>
+                </label>
+                <label class="cal-field">Fiscal year starts in
+                  <select class="field field--fiscal" id="fiscalStart" data-setting="fiscalStart"></select>
+                </label>
+              </div>
               <p class="cal-range" id="calRange"></p>
             </div>
             <div class="cal-field cal-field--countries">
@@ -249,6 +258,7 @@
           <div class="carry-bar" id="carryBar" role="status" hidden></div>
           <div class="board-grid" id="board"></div>
           <div class="table-wrap" id="boardTable" hidden></div>
+          <div class="map-wrap" id="boardMap" hidden></div>
         </section>
         </div>
 
@@ -415,7 +425,9 @@
       </header>
       <div class="modal__body help">
         <p><strong>A story point is one focus day.</strong> A week has five working days; with the meeting day on, one of them goes to ceremonies and does not count, so a week holds four points and a two-week sprint holds eight.</p>
-        <p><strong>A plan is a number of sprints.</strong> A quarter holds six two-week sprints; when two months of it go to planned work, the plan is four. One engineer's plan is points a sprint times sprints: 8 × 4 = 32.</p>
+        <p><strong>A plan is a number of sprints, laid on a quarter.</strong> A quarter holds six two-week sprints; when two months of it go to planned work, the plan is four. One engineer's plan is points a sprint times sprints: 8 × 4 = 32. Pick the quarter under Calendar; quarters follow your fiscal year (with an October start, October to December 2026 is Q1 FY27).</p>
+        <p><strong>A deliverable can take less than the whole plan.</strong> Click the sprints on a card (or drag its bar on the Map) to run it over, say, S1 to S2. A share is then a percentage of the person's time in those sprints, and by default each person keeps the points they gave it, so fewer sprints ask for a bigger share of their time there. Someone on two deliverables in the same sprints can be over-booked in those sprints even when the quarter adds up; the flags say which.</p>
+        <p><strong>Every deliverable has a landing date:</strong> the working day its people's points add up to its estimate. Short of that, it keeps the same pace past its sprints (and past the plan, on the Map) and says so. The Map shows the quarter's months, each person's holidays and vacations (drag across a row to add one) and how full each of their sprints is.</p>
         <p><strong>One full-time engineer lands on the Fibonacci scale</strong>, the same scale the work is sized on: 32 becomes 34, and 48 becomes 55. Everyone else is their own capacity scaled by that same factor, so a vacation day or a load step moves them a little instead of jumping them from 34 to 21. Pick <em>Fibonacci below</em> for a safer plan (32 becomes 21). The raw number is always shown next to the planned one.</p>
         <p><strong>Load and sprints away</strong> scale one person: half-time on this team over four sprints is 16 raw, 17 planned. <strong>Buffer</strong> comes off after rounding and holds back a percentage of everyone's capacity for support and unplanned work: 10% of 34 leaves 31 bookable.</p>
         <p><strong>The calendar takes days out.</strong> Sprints start on the date you pick. Public holidays come from the country you choose for the team (anyone can have their own), team days off apply to everyone or only to one country's people when you limit them to it, and vacations belong to one person. A day off only costs a focus day when it lands on a working day, and a week someone spends entirely away costs no meeting day either.</p>

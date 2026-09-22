@@ -50,6 +50,10 @@ the one in Mexico alone.
 ## Features
 
 - **The formula is the settings** -- weeks a sprint, working days, the meeting day toggle, points a focus day, a sprint cap, sprints in the plan (Quarter · 6 or Two months · 4), a buffer, and how capacity rounds (nearest Fibonacci, up, down or not at all), each an editable term in one visible chain
+- **Quarters as the base** -- pick the quarter to plan (Q1 FY27 is October to December 2026 with an October fiscal year, or calendar quarters), and every date, sprint and label follows
+- **Deliverables on part of the plan** -- run a deliverable over, say, S1 to S2 instead of the whole quarter; each person keeps the points they give it, so fewer sprints take a bigger share of their time, and two deliverables on the same sprints over-book those sprints (flagged per sprint)
+- **Landing dates** -- every deliverable gets an estimated completion date, the working day its people's points reach its estimate; a short one says when it lands at the pace it has, even past the plan, on the card, in the table (When and Lands columns) and in every export
+- **The map** -- the quarter's months and sprints across the top, one row per person with their holidays, team days off and vacations (drag across a row to add one) and how full each sprint is, one bar per deliverable (drag to move or resize it) with a diamond where it lands
 - **Real dates** -- sprints start on the date you pick (next quarter's first Monday by default), each sprint shows the team's points so a holiday-heavy sprint stands out, and the calendar folds to one summary line once it is set
 - **Correct the calendar** -- mark a public holiday as worked, or scope a team day off to one country; US federal holidays many private employers work (Columbus Day, Veterans Day) and Argentina's decreed bridge days are labelled, with one click to work them all
 - **Several plans, nothing replaced** -- every plan in this browser is one click away under Plans; a share link, an import, the example or a blank plan opens as a plan of its own, the same plan opened twice is found rather than copied, and a deleted or wiped plan can be restored
@@ -117,6 +121,10 @@ reparto-site/
 │   ├── render-calendar.js  # Start date, country, sprint dates, days off
 │   ├── render-board.js   # Roster rows and deliverable cards
 │   ├── render-table.js   # The table view, and the Later and Done lists
+│   ├── render-map.js     # The map: months, sprints, people, deliverables, landing dates
+│   ├── map-edit.js       # Drag a vacation onto a row, drag or resize a deliverable's sprints
+│   ├── timeline.js       # Deliverable spans, per-sprint splits, landing dates
+│   ├── quarters.js       # Fiscal quarters: labels, ranges, the quarter picker
 │   ├── icons.js          # icon(): inline SVG from icon-data.js (generated from Lucide)
 │   ├── render-flags.js   # The flags panel
 │   ├── dnd.js            # Pointer drag, edge scroll, tap to carry

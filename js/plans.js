@@ -165,8 +165,10 @@ export function openPlan(raw, origin = '') {
   return { id: state.planId, existing: false }
 }
 
-export const newBlankPlan = () => openPlan(blankPlan(), 'blank')
-export const openExample = () => openPlan(examplePlan(), 'example')
+// A new plan counts quarters the way the open one does: the fiscal year is the company's, not the plan's.
+const fiscal = () => ({ fiscalStart: state.doc?.settings.fiscalStart })
+export const newBlankPlan = () => openPlan(blankPlan(fiscal()), 'blank')
+export const openExample = () => openPlan(examplePlan(fiscal()), 'example')
 /** A copy under a title no other plan has ("Copy of Q4", "Copy 2 of Q4"), so it is always a new plan. */
 export function duplicatePlan() {
   const titles = new Set(listPlans().map(p => p.title))
@@ -184,7 +186,8 @@ export function duplicatePlan() {
  */
 export function isBlankPlan(doc) {
   const s = doc.settings
-  const rules = Object.keys(DEFAULT_SETTINGS).filter(k => k !== 'startDate' && k !== 'countries')
+  // The fiscal year start only names quarters: a plan that changed nothing else is still blank.
+  const rules = Object.keys(DEFAULT_SETTINGS).filter(k => k !== 'startDate' && k !== 'countries' && k !== 'fiscalStart')
   return !doc.people.length && !doc.deliverables.length && !(doc.backlog || []).length && !(doc.daysOff || []).length
     && !(s.countries || []).length && !(s.worked || []).length
     && rules.every(k => s[k] === DEFAULT_SETTINGS[k])
@@ -213,7 +216,7 @@ export function deletePlan(id = state.planId, { withoutCopy = false } = {}) {
     return 'deleted'
   }
   change({ remove: id })
-  open(newId('pl'), normalizeDoc(blankPlan()))
+  open(newId('pl'), normalizeDoc(blankPlan(fiscal())))
   saveState('blank')
   return 'deleted'
 }

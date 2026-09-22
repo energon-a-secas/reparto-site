@@ -2,12 +2,14 @@
 // One element (#pop), anchored under the control that opened it. The anchor
 // is remembered by data-key, not by node, because every change re-renders.
 
-import { state, snapshot, deliverable, findDeliverable, person, updateDeliverable, setShare } from './state.js'
-import { SCALE, fibCeil, analyze, shareKey, pctForPoints, PCT_MIN, PCT_MAX } from './capacity.js'
-import { engineers } from './flags.js'
+import { state, snapshot, commitFrom, deliverable, findDeliverable, person, updatePerson, updateDeliverable, setShare } from './state.js'
+import { SCALE, fibCeil, analyze, shareKey, pctForPoints, freeIn, PCT_MIN, PCT_MAX } from './capacity.js'
+import { engineers, landingText, sprintList } from './flags.js'
+import { sprintWindows, lastWorkday, fmtDay, fmtSpan, parseISO } from './calendar.js'
+import { spanLabel } from './timeline.js'
 import { cal } from './holidays.js'
 import { afterChange } from './render.js'
-import { moveTo, removeDeliverablePinned, unassignPinned, saveDeliverableDetails } from './actions.js'
+import { moveTo, removeDeliverablePinned, unassignPinned, saveDeliverableDetails, changeWindow } from './actions.js'
 import { PRIORITIES, PROGRESS, BOX_COLORS, priorityOf, progressOf, priorityColorOf } from './planning.js'
 import { icon } from './icons.js'
 import { $, escHtml, showToast, fmtPct } from './utils.js'
@@ -154,17 +156,20 @@ export function openShare(delivId, personId) {
   const pa = a.people.get(personId), da = a.deliverables.get(delivId)
   const sh = a.shares.get(shareKey(delivId, personId))
   const who = p.name.trim() || 'Unnamed'
-  const freePct = Math.max(0, 100 - pa.pct)
+  // Everything here is about the deliverable's sprints: their points there, and what they have free there.
+  const span = a.spans.get(delivId), exactCap = sh.winCap, cap = Math.round(exactCap), where = span.whole ? '' : ` in ${spanLabel(span)}`
+  const free = freeIn(pa, span)
+  const freePct = exactCap ? (free / exactCap) * 100 : 0
   const quick = []
   // Only offer what the person has: covering a gap by over-booking them is not a fix.
-  if (da.gap > 0 && pa.free > 0) {
-    const pts = sh.points + Math.min(da.gap, pa.free)
-    quick.push(`<button type="button" class="chip-btn" data-pct="${pctForPoints(state.doc, cal, delivId, personId, pts)}">${pa.free >= da.gap ? 'Cover the gap' : 'Cover what they can'}: ${pts} pts</button>`)
+  if (da.gap > 0 && free > 0) {
+    const pts = sh.points + Math.min(da.gap, free)
+    quick.push(`<button type="button" class="chip-btn" data-pct="${pctForPoints(state.doc, cal, delivId, personId, pts)}">${free >= da.gap ? 'Cover the gap' : 'Cover what they can'}: ${pts} pts</button>`)
   }
-  if (freePct > 0.5 && pa.free !== da.gap) quick.push(`<button type="button" class="chip-btn" data-pct="${Math.round((sh.pct + freePct) * 100) / 100}">All their free time: ${fmtPct(sh.pct + freePct)}</button>`)
+  if (freePct > 0.5 && free !== da.gap) quick.push(`<button type="button" class="chip-btn" data-pct="${Math.round((sh.pct + freePct) * 100) / 100}">All their free time: ${fmtPct(sh.pct + freePct)}</button>`)
   const pop = open(`sp-${delivId}-${personId}`, `${head(`${who} on ${d.name.trim() || 'this deliverable'}`)}
-    <p class="pop-label">Share of ${escHtml(who)}'s ${pa.cap} pts</p>
-    <div class="scale" role="group" aria-label="Percent of their ${pa.cap} points">${PCTS.map(v =>
+    <p class="pop-label">Share of ${escHtml(who)}'s ${cap} pts${where}</p>
+    <div class="scale" role="group" aria-label="Percent of their ${cap} points${where}">${PCTS.map(v =>
       `<button type="button" class="scale-btn" data-pct="${v}" aria-pressed="${Math.round(sh.pct) === v}">${v}%</button>`).join('')}</div>
     <div class="pop-row">
       <input class="field field--num" id="popPct" type="number" min="${PCT_MIN}" max="${PCT_MAX}" step="any" value="${Math.round(sh.pct * 100) / 100}" aria-label="Percent">
@@ -176,7 +181,7 @@ export function openShare(delivId, personId) {
       <button type="button" class="btn btn--secondary btn--sm" data-pct="points">Set</button>
     </div>
     ${quick.length ? `<div class="pop-row pop-row--wrap">${quick.join('')}</div>` : ''}
-    <p class="pop-note">${fmtPct(sh.pct)} of ${escHtml(who)}'s ${pa.cap} pts is <strong>${sh.points} pts</strong> here, and moves with their capacity. Across everything: ${fmtPct(pa.pct)}${pa.free < 0 ? `, ${-pa.free} pts over` : `, ${pa.free} pts free`}. ${d.estimate ? `The deliverable needs ${d.estimate}, has ${da.got}.` : 'The deliverable is not sized yet.'}${sh.fixed ? ' This share is fixed points from an older plan; setting it makes it a percentage.' : ''}</p>
+    <p class="pop-note">${fmtPct(sh.pct)} of ${escHtml(who)}'s ${cap} pts${where} is <strong>${sh.points} pts</strong> here, and moves with their capacity. Across the plan: ${fmtPct(pa.pct)}${pa.free < 0 ? `, ${-pa.free} pts over` : `, ${pa.free} pts free`}${pa.overSprints.length ? `, over-booked in ${sprintList(pa.overSprints)}` : ''}. ${d.estimate ? `The deliverable needs ${d.estimate}, has ${da.got}.` : 'The deliverable is not sized yet.'}${sh.fixed ? ' This share is fixed points from an older plan; setting it makes it a percentage.' : ''}</p>
     <button type="button" class="btn btn--ghost btn--sm btn--block" data-pct="remove">Take ${escHtml(who)} off</button>`,
   'Change the share')
   if (!pop) return
@@ -192,14 +197,14 @@ export function openShare(delivId, personId) {
       return
     }
     // A share is stored between PCT_MIN and PCT_MAX of their capacity: say so rather than clamp in silence.
-    const most = Math.floor((pa.cap * PCT_MAX) / 100)
+    const most = Math.floor((exactCap * PCT_MAX) / 100)
     let v
     if (raw === 'exact') v = Number(pop.querySelector('#popPct').value)
     else if (raw === 'points') {
       const pts = Math.round(Number(pop.querySelector('#popPts').value))
       if (!(pts >= 1)) { showToast('A share is at least 1 point'); return }
-      if (!pa.cap) { showToast(`${who} has no capacity in this plan, so points cannot be split`); return }
-      if (pts > most) { showToast(`A share is at most ${PCT_MAX}% of ${who}'s ${pa.cap} pts: ${most} pts`); return }
+      if (!cap) { showToast(`${who} has no capacity${where || ' in this plan'}, so points cannot be split`); return }
+      if (pts > most) { showToast(`A share is at most ${PCT_MAX}% of ${who}'s ${cap} pts${where}: ${most} pts`); return }
       v = pctForPoints(state.doc, cal, delivId, personId, pts)
     } else v = Number(raw)
     if (!(v >= PCT_MIN)) { showToast(`A share is at least ${PCT_MIN}%`); return }
@@ -257,5 +262,109 @@ export function openCardMenu(delivId, { anchor = `dm-${delivId}`, focus = 'prior
     closePop({ restore: false })
     if (b.dataset.menu === 'move') moveTo(delivId, b.dataset.when)
     else if (b.dataset.menu === 'remove' && removeDeliverablePinned(delivId)) showToast(`Removed ${name}. Ctrl+Z brings it back`)
+  }
+}
+
+// ── When: the sprints a deliverable runs over ────────────────
+// Shorter than the plan when it needs less time. By default each person keeps
+// the points they give it, so the same work lands in fewer sprints at a bigger
+// share of their time there; the preview says what that asks of them and when
+// it lands, before anything changes.
+export function openWindow(delivId) {
+  const d = deliverable(delivId); if (!d) return
+  const s = state.doc.settings
+  const wins = sprintWindows(s)
+  const name = d.name.trim() || 'Untitled deliverable'
+  const a = analyze(state.doc, cal)
+  const span = a.spans.get(delivId)
+  const opt = (i, label, sel) => `<option value="${i + 1}"${sel ? ' selected' : ''}>${label}</option>`
+  const fromOpts = wins.map(w => opt(w.i, `S${w.i + 1} · from ${fmtDay(w.from)}`, w.i === span.a)).join('')
+  const toOpts = wins.map(w => opt(w.i, `S${w.i + 1} · to ${fmtDay(lastWorkday(w, s.daysPerWeek))}`, w.i === span.b)).join('')
+  const half = Math.floor(s.sprints / 2)
+  const quick = [['Whole plan', 1, s.sprints], half && ['First half', 1, half], half && ['Second half', half + 1, s.sprints]].filter(Boolean)
+  const pop = open(`dt-${delivId}`, `${head(`When: ${name}`)}
+    <div class="pop-row pop-row--wrap win-row">
+      <label class="pop-label" for="winFrom">From<select class="field" id="winFrom">${fromOpts}</select></label>
+      <label class="pop-label" for="winTo">To<select class="field" id="winTo">${toOpts}</select></label>
+    </div>
+    <div class="pop-row pop-row--wrap">${quick.map(([label, f, t]) => `<button type="button" class="chip-btn" data-win="${f}-${t}">${label}</button>`).join('')}</div>
+    <label class="check win-keep"><input type="checkbox" id="winKeep" checked> Keep each person's points: fewer sprints take a bigger share of their time</label>
+    <p class="pop-note" id="winPreview" aria-live="polite"></p>
+    <div class="pop-row"><button type="button" class="btn btn--primary btn--sm" data-win="apply">Set sprints</button></div>`,
+  `When ${name} runs`, '#winFrom')
+  if (!pop) return
+  const from = pop.querySelector('#winFrom'), to = pop.querySelector('#winTo'), keep = pop.querySelector('#winKeep')
+  const chosen = () => {
+    let f = Number(from.value), t = Number(to.value)
+    if (t < f) [f, t] = [t, f]
+    return f === 1 && t === s.sprints ? null : { from: f, to: t }
+  }
+  // What the change would do, worked out on a copy: each person's share of their time there, and the landing date.
+  const preview = () => {
+    const w = chosen()
+    const next = structuredClone(state.doc)
+    const nd = next.deliverables.find(x => x.id === delivId)
+    const before = analyze(state.doc, cal)
+    nd.window = w
+    if (keep.checked) {
+      for (const m of nd.members) {
+        const had = before.shares.get(shareKey(delivId, m.person))?.points
+        if (m.pct != null && had) m.pct = pctForPoints(next, cal, delivId, m.person, had)
+      }
+    }
+    const b = analyze(next, cal), db = b.deliverables.get(delivId)
+    const who = nd.members.map(m => {
+      const p = person(m.person), sh = b.shares.get(shareKey(delivId, m.person)), pa = b.people.get(m.person)
+      const over = pa.overSprints.filter(i => i >= db.span.a && i <= db.span.b)
+      return `${escHtml(p?.name.trim() || 'Unnamed')} ${sh.points} pts, ${fmtPct(sh.pct)} of their time there${over.length ? ` <span class="error-text">(over-booked in ${sprintList(over)})</span>` : ''}`
+    })
+    pop.querySelector('#winPreview').innerHTML = `${escHtml(spanLabel(db.span))}.${who.length ? ` ${who.join('; ')}.` : ''} ${escHtml(landingText(db.lands, s, db.span).text)}.`
+    repositionPop()
+  }
+  pop.addEventListener('change', e => { if (e.target.matches('select, input')) preview() })
+  preview()
+  pop.onclick = e => {
+    if (e.target.closest('[data-pop="close"]')) { closePop(); return }
+    const b = e.target.closest('[data-win]'); if (!b) return
+    if (b.dataset.win !== 'apply') {
+      const [f, t] = b.dataset.win.split('-').map(Number)
+      from.value = String(f); to.value = String(t); preview(); return
+    }
+    closePop()
+    changeWindow(delivId, chosen(), { keepPoints: keep.checked })
+  }
+}
+
+// ── A vacation on the map: its dates, or gone ────────────────
+export function openVacation(personId, index) {
+  const p = person(personId), v = p?.vacations?.[index]
+  if (!v) return
+  const who = p.name.trim() || 'Unnamed'
+  const pop = open(`mv-${personId}-${index}`, `${head(`${who}: vacation`)}
+    <div class="pop-row pop-row--wrap">
+      <label class="pop-label" for="vacFrom">From<input type="date" class="field field--date" id="vacFrom" value="${v.from}"></label>
+      <label class="pop-label" for="vacTo">To<input type="date" class="field field--date" id="vacTo" value="${v.to}"></label>
+    </div>
+    <p class="pop-note">${escHtml(fmtSpan(v.from, v.to))}. Holidays and weekends inside it cost nothing extra.</p>
+    <div class="pop-row"><button type="button" class="btn btn--primary btn--sm" data-vac="save">Save dates</button><button type="button" class="btn btn--ghost btn--sm btn--quiet-danger" data-vac="remove">Remove</button></div>`,
+  `${who}'s vacation`, '#vacFrom')
+  if (!pop) return
+  pop.onclick = e => {
+    if (e.target.closest('[data-pop="close"]')) { closePop(); return }
+    const b = e.target.closest('[data-vac]'); if (!b) return
+    const list = [...p.vacations]
+    if (b.dataset.vac === 'remove') list.splice(index, 1)
+    else {
+      const from = pop.querySelector('#vacFrom').value, to = pop.querySelector('#vacTo').value
+      if (!parseISO(from) || !parseISO(to)) { showToast('Pick both dates'); return }
+      list[index] = { from, to }
+    }
+    closePop({ restore: false })
+    const before = JSON.stringify(state.doc)
+    updatePerson(personId, { vacations: list })
+    if (!commitFrom(before)) return
+    afterChange()
+    showToast(b.dataset.vac === 'remove' ? `${who}'s vacation removed. Ctrl+Z brings it back` : `${who}'s vacation: ${fmtSpan(list[index].from, list[index].to)}`)
+    document.querySelector(`[data-key="me-${CSS.escape(personId)}"]`)?.focus({ preventScroll: true })
   }
 }

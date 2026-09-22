@@ -1,7 +1,8 @@
 // Flags live in an on-demand dialog. A status or person indicator scopes the
 // same review to that item; the global button always shows the whole plan.
 import { state, ui } from './state.js'
-import { CATEGORIES, deliverableStatus } from './flags.js'
+import { CATEGORIES, deliverableStatus, landingText, sprintList } from './flags.js'
+import { spanLabel } from './timeline.js'
 import { fmtSpan } from './calendar.js'
 import { icon, LEVEL_ICON } from './icons.js'
 import { $, escHtml, plural } from './utils.js'
@@ -35,12 +36,15 @@ export function renderFlags(all, a) {
   $('flagsContext').innerHTML = ''
   if (scope?.kind === 'deliverable') {
     const da = a.deliverables.get(scope.id)
-    $('flagsContext').innerHTML = stats([['Estimate', subject.estimate == null ? 'Unsized' : `${subject.estimate} pts`], ['Booked', `${da.got} pts`], [da.gap < 0 ? 'Overstaffed' : 'Short', subject.estimate == null ? '—' : `${Math.abs(da.gap)} pts`]])
+    const lt = landingText(da.lands, state.doc.settings, da.span)
+    $('flagsContext').innerHTML = stats([['Estimate', subject.estimate == null ? 'Unsized' : `${subject.estimate} pts`], ['Booked', `${da.got} pts`], [da.gap < 0 ? 'Overstaffed' : 'Short', subject.estimate == null ? 'Not sized' : `${Math.abs(da.gap)} pts`],
+      ['Sprints', da.span.whole ? 'Whole plan' : escHtml(spanLabel(da.span))], ['Lands', escHtml(lt.short)]])
+      + `<p class="inspect-note">${icon('diamond')}${escHtml(lt.text)}. <button type="button" class="panel-link" data-action="window" data-id="${subject.id}">Change its sprints</button></p>`
       + (subject.note ? `<p class="inspect-note">${escHtml(subject.note)}</p>` : '')
   } else if (scope?.kind === 'person') {
     const pa = a.people.get(scope.id)
     const leave = [pa.lost.vacation ? `${plural(pa.lost.vacation, 'working day')} of vacation in this plan` : '', subject.sprintsOff ? plural(subject.sprintsOff, 'sprint') + ' away' : ''].filter(Boolean)
-    $('flagsContext').innerHTML = stats([['Capacity', `${pa.cap} pts`], ['Booked', `${pa.used} pts`], [pa.free < 0 ? 'Over-booked' : 'Available', `${Math.abs(pa.free)} pts`]])
+    $('flagsContext').innerHTML = stats([['Capacity', `${pa.cap} pts`], ['Booked', `${pa.used} pts`], [pa.free < 0 ? 'Over-booked' : 'Available', `${Math.abs(pa.free)} pts`], ...(pa.overSprints.length ? [['Over in', sprintList(pa.overSprints)]] : [])])
       + (leave.length ? `<p class="inspect-note">${icon('calendar-days')}${escHtml(leave.join(' · '))}</p>` : '')
       + (subject.vacations?.length ? `<p class="inspect-note">Leave dates: ${subject.vacations.map(v => escHtml(fmtSpan(v.from, v.to))).join('; ')}</p>` : '')
       + `<button type="button" class="btn btn--secondary btn--sm" data-action="edit-person" data-id="${subject.id}">${icon('pencil', { size: 14 })}Edit availability & assignments</button>`

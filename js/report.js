@@ -5,7 +5,9 @@
 // in), so test/tables.test.mjs pins it under Node.
 
 import { shareKey, ROUNDING } from './capacity.js'
-import { computeFlags, deliverableStatus, statusText, missingPeople, engineers, leaveLines, CATEGORIES } from './flags.js'
+import { computeFlags, deliverableStatus, statusText, missingPeople, engineers, leaveLines, landingText, CATEGORIES } from './flags.js'
+import { spanLabel } from './timeline.js'
+import { planQuarters } from './quarters.js'
 import { planRange, sprintWindows, lastWorkday, fmtDay, fmtSpan, parseISO } from './calendar.js'
 import { PRIORITIES, PROGRESS, priorityOf, progressOf } from './planning.js'
 
@@ -57,7 +59,7 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
     '',
     `**One engineer:** ${steps.join(' ')}. Everyone else is their own capacity scaled by the same factor.`,
     '',
-    `**Calendar:** starts ${fmtDay(s.startDate, true)}${end ? `, ends ${fmtDay(end, true)}` : ''} · holidays taken out: ${named.join('; ') || 'none (no countries picked)'}`
+    `**Calendar:** ${range ? `${planQuarters(range, s.fiscalStart)}, ` : ''}starts ${fmtDay(s.startDate, true)}${end ? `, ends ${fmtDay(end, true)}` : ''} · holidays taken out: ${named.join('; ') || 'none (no countries picked)'}`
       + `${doc.daysOff.length ? ` · team days off: ${doc.daysOff.map(t => `${fmtDay(t.date)} ${flat(t.label)}${t.country ? ` (${countryName(t.country)} only)` : ''}`).join(', ')}` : ''}`
       + `${(s.worked || []).length ? ` · worked holidays: ${s.worked.map(w => `${countryName(w.country)} ${fmtDay(w.date)}`).join(', ')}` : ''}`,
     '',
@@ -67,14 +69,15 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
     '',
     '## Deliverables',
     '',
-    '| Deliverable | Estimate | Booked | People | Staffing | Priority | Progress | Note |',
-    '|---|---:|---:|---|---|---|---|---|',
+    '| Deliverable | Estimate | Booked | Sprints | Lands | People | Staffing | Priority | Progress | Note |',
+    '|---|---:|---:|---|---|---|---|---|---|---|',
     ...doc.deliverables.map(d => {
       const da = a.deliverables.get(d.id)
       const who = d.members.map(m => { const sh = a.shares.get(shareKey(d.id, m.person)); return `${name(m.person)} ${sh.points} (${pctText(sh.pct)})` })
       // A short deliverable says which leave made it short.
       const leave = da.gap > 0 && da.leavePts ? `; leave: ${leaveLines(da, doc, a).join(', ')}` : ''
-      return `| ${cell(d.name.trim() || 'Untitled deliverable')} | ${d.estimate ?? '?'} | ${da.got} | ${cell(who.join(', ') || 'none')} | ${cell(statusText(deliverableStatus(d, da, a, doc)) + leave)} | ${PRIORITIES[priorityOf(d)].label} | ${PROGRESS[progressOf(d)].label} | ${cell(d.note) || ' '} |`
+      const lt = landingText(da.lands, s, da.span)
+      return `| ${cell(d.name.trim() || 'Untitled deliverable')} | ${d.estimate ?? '?'} | ${da.got} | ${da.span.whole ? 'All' : spanLabel(da.span)} | ${cell(lt.date ? `${lt.short}${lt.late ? (lt.afterPlan ? ' (after the plan)' : ' (late)') : ''}` : lt.short)} | ${cell(who.join(', ') || 'none')} | ${cell(statusText(deliverableStatus(d, da, a, doc)) + leave)} | ${PRIORITIES[priorityOf(d)].label} | ${PROGRESS[progressOf(d)].label} | ${cell(d.note) || ' '} |`
     }),
     '',
     '## People',

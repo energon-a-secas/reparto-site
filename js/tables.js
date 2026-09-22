@@ -8,8 +8,10 @@
 // value is a percent number (50 means 50%); each format decides how to show it.
 
 import { shareKey, ROUNDING } from './capacity.js'
-import { planRange, fmtDay, lastWorkday } from './calendar.js'
-import { deliverableStatus, statusText } from './flags.js'
+import { planRange, fmtDay, lastWorkday, iso } from './calendar.js'
+import { deliverableStatus, statusText, landingText } from './flags.js'
+import { spanLabel } from './timeline.js'
+import { planQuarters, MONTH_NAMES } from './quarters.js'
 import { PRIORITIES, PROGRESS, BOX_COLORS, priorityOf, progressOf, boxColorOf } from './planning.js'
 
 const round1 = n => Math.round(n * 10) / 10
@@ -34,6 +36,13 @@ function flagsById(flags) {
   return out
 }
 
+/** The estimated completion as a sortable date, or empty when there is none. */
+const landsIso = da => (da.lands?.date ? iso(da.lands.date) : '')
+const landsNote = da => ({
+  'on-time': 'In its sprints', late: da.lands.afterPlan ? 'After the plan, at this pace' : 'After its sprints, at this pace',
+  far: 'Not within two years at this pace', none: 'No date: nobody on it', unsized: 'No date: not sized',
+}[da.lands?.kind] || '')
+
 export const TABLES = {
   deliverables: 'By deliverable',
   engineers: 'By engineer',
@@ -57,6 +66,9 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
         { key: 'booked', label: 'Booked (pts)', type: 'int' },
         { key: 'gap', label: 'Short (pts)', type: 'int' },
         { key: 'engineers', label: 'Short (engineers)', type: 'num' },
+        { key: 'sprints', label: 'Sprints', type: 'text' },
+        { key: 'lands', label: 'Estimated completion', type: 'text' },
+        { key: 'landsNote', label: 'Completion', type: 'text' },
         { key: 'status', label: 'Staffing status', type: 'text' },
         { key: 'count', label: 'People', type: 'int' },
         { key: 'split', label: 'Who, share of their capacity (pts)', type: 'text' },
@@ -72,7 +84,10 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
           estimate: d.estimate ?? null,
           booked: da.got,
           gap: da.gap > 0 ? da.gap : 0,
-          engineers: da.gap > 0 ? (unit ? round1(da.gap / unit) : null) : 0,
+          engineers: da.gap > 0 ? ((da.unitWindow || unit) ? round1(da.gap / (da.unitWindow || unit)) : null) : 0,
+          sprints: `${spanLabel(da.span, { whole: false })}${da.span.whole ? ' (whole plan)' : ''}`,
+          lands: landsIso(da),
+          landsNote: landsNote(da),
           status: statusText(deliverableStatus(d, da, a, doc)),
           count: d.members.length,
           split: d.members.map(m => {
@@ -227,6 +242,8 @@ export function settingsTable(doc, a, { countryName = c => c } = {}) {
   const s = doc.settings, range = planRange(s)
   const rows = [
     ['Plan', doc.title],
+    ['Quarter', planQuarters(range, s.fiscalStart)],
+    ['Fiscal year starts', MONTH_NAMES[(s.fiscalStart || 1) - 1]],
     ['Starts', fmtDay(s.startDate, true)],
     ['Ends', range ? fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true) : ''],
     ['Sprints', s.sprints],
@@ -247,6 +264,7 @@ export function settingsTable(doc, a, { countryName = c => c } = {}) {
     ['Rounding factor applied to everyone', Math.round(a.k * 1000) / 1000],
     ['One engineer bookable after the buffer (pts)', a.bookable],
     ['Team points per sprint', a.perSprint.map((p, i) => `S${i + 1} ${p}`).join('; ')],
+    ['Booked per sprint', a.bookedPerSprint.map((p, i) => `S${i + 1} ${p}`).join('; ')],
     ['Public holidays marked as worked', (s.worked || []).map(w => `${w.country} ${fmtDay(w.date, true)}`).join('; ') || 'None'],
     ['Team capacity (pts)', a.capacity],
     ['Demand (pts)', a.demand],

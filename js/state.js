@@ -62,6 +62,20 @@ const dedupe = (list, key) => { const seen = new Set(); return list.filter(x => 
 const date = v => (parseISO(v) ? v : '')
 const code = v => (typeof v === 'string' && /^[A-Z]{2}$/.test(v) ? v : '')
 
+/**
+ * A deliverable's sprints: { from, to }, 1-based and inclusive, or null for
+ * the whole plan. Kept as given within 1 to 13 (the most sprints a plan has);
+ * analyze() pulls a window past a shorter plan back inside it.
+ */
+function sprintWindow(w) {
+  if (!w || typeof w !== 'object') return null
+  let from = Math.round(Number(w.from)), to = Math.round(Number(w.to))
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return null
+  from = Math.min(13, Math.max(1, from)); to = Math.min(13, Math.max(1, to))
+  if (to < from) [from, to] = [to, from]
+  return { from, to }
+}
+
 /** Vacation periods: valid dates only, a reversed range swapped, at most 40 a person. */
 function periods(list) {
   const out = []
@@ -88,7 +102,7 @@ export function normalizeDoc(raw) {
   }
   const s = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) }
   const settings = {
-    startDate: date(s.startDate) || defaultStart(),
+    startDate: date(s.startDate) || defaultStart(Math.round(num(s.fiscalStart, 1, 12, DEFAULT_SETTINGS.fiscalStart))),
     // A plan saved before multi-country holidays carries one `country`.
     countries: [...new Set((Array.isArray(raw.settings?.countries) ? raw.settings.countries : [raw.settings?.country]).map(code).filter(Boolean))].slice(0, 12),
     weeksPerSprint: Math.round(num(s.weeksPerSprint, 1, 4, 2)),
@@ -100,6 +114,8 @@ export function normalizeDoc(raw) {
     buffer: num(s.buffer, 0, 50, 0),
     // Own keys only: `in` let '__proto__', 'toString' and ['up'] through, so the labels named a rule the maths never used.
     rounding: typeof s.rounding === 'string' && Object.hasOwn(ROUNDING, s.rounding) ? s.rounding : 'nearest',
+    // The month the fiscal year starts: it names the quarters (Q1 FY27), never moves a date.
+    fiscalStart: Math.round(num(s.fiscalStart, 1, 12, DEFAULT_SETTINGS.fiscalStart)),
     // Public holidays a country's team works anyway: [{ country, date }].
     worked: dedupe((Array.isArray(s.worked) ? s.worked : [])
       .map(w => ({ country: code(w?.country), date: date(w?.date) })).filter(w => w.country && w.date), w => `${w.country}|${w.date}`).slice(0, 60),
@@ -143,7 +159,7 @@ export function normalizeDoc(raw) {
       else members.push({ person: pid, points: num(Math.round(m.points), 1, 999, 1) })
     }
     const est = Number(d.estimate)
-    return { id, name: str(d.name), note: str(d.note, 400), estimate: SCALE.includes(est) ? est : null, members, ...normalizePlanning(d) }
+    return { id, name: str(d.name), note: str(d.note, 400), estimate: SCALE.includes(est) ? est : null, members, ...normalizePlanning(d), window: sprintWindow(d.window) }
   }
   const deliverables = raw.deliverables.filter(d => d && typeof d === 'object').slice(0, MAX_ITEMS).map(deliverable)
   const backlog = (Array.isArray(raw.backlog) ? raw.backlog : []).filter(d => d && typeof d === 'object').slice(0, 500)
@@ -234,7 +250,7 @@ export function removePerson(id) {
 }
 
 export function addDeliverable(fields = {}) {
-  const d = { id: newId('d'), name: '', estimate: null, note: '', members: [], ...fields, ...normalizePlanning(fields) }
+  const d = { id: newId('d'), name: '', estimate: null, note: '', members: [], window: null, ...fields, ...normalizePlanning(fields) }
   state.doc.deliverables.push(d)
   return d
 }
@@ -242,6 +258,15 @@ export function updateDeliverable(id, fields) { Object.assign(findDeliverable(id
 export function removeDeliverable(id) {
   state.doc.deliverables = state.doc.deliverables.filter(d => d.id !== id)
   state.doc.backlog = state.doc.backlog.filter(d => d.id !== id)
+}
+
+/** Run a deliverable over some of the plan's sprints (1-based, inclusive), or the whole plan with null. */
+export function setWindow(id, window) {
+  const d = findDeliverable(id); if (!d) return false
+  const next = sprintWindow(window)
+  if (JSON.stringify(next) === JSON.stringify(d.window ?? null)) return false
+  d.window = next
+  return true
 }
 
 // ── Later and done ───────────────────────────────────────────
@@ -285,7 +310,7 @@ export function moveDeliverable(id, when) {
 export function wipe({ settings = false } = {}) {
   const doc = state.doc
   doc.people = []; doc.deliverables = []; doc.backlog = []; doc.daysOff = []
-  if (settings) doc.settings = { ...DEFAULT_SETTINGS, startDate: defaultStart(), countries: [], worked: [] }
+  if (settings) doc.settings = { ...DEFAULT_SETTINGS, fiscalStart: doc.settings.fiscalStart, startDate: defaultStart(doc.settings.fiscalStart), countries: [], worked: [] }
 }
 
 const pct2 = x => Math.round(Math.min(PCT_MAX, Math.max(PCT_MIN, x)) * 100) / 100

@@ -6,9 +6,11 @@
 // row and a card read the same.
 
 import { state, ui } from './state.js'
-import { flagIndex, deliverableStatus } from './flags.js'
+import { flagIndex, deliverableStatus, landingText, sprintList } from './flags.js'
+import { spanLabel } from './timeline.js'
 import { shareKey } from './capacity.js'
 import { renderTable } from './render-table.js'
+import { renderMap } from './render-map.js'
 import { icon, STATUS_ICON } from './icons.js'
 import { PRIORITIES, PROGRESS, priorityOf, progressOf, priorityColorOf, boxColorOf, sortByPriority } from './planning.js'
 import { $, escHtml, initials, compactName, faceColor, plural, fmtPct } from './utils.js'
@@ -27,6 +29,20 @@ export function statusButton(d, st, da) {
   const label = { ok: 'Staffed', short: 'Short', over: 'Overstaffed', unsized: 'Unsized', empty: 'Unassigned', risk: 'At risk' }[st.cls]
   const tip = `${st.text}${da.leavePts > 0 ? `. Leave affects ${da.leavePts} points.` : ''} Click for details and fixes.`
   return `<button type="button" class="status-button status--${st.cls}" data-action="flags" data-kind="deliverable" data-id="${d.id}" data-key="ds-${d.id}" aria-haspopup="dialog" aria-label="${escHtml(d.name || 'Deliverable')}: ${label}. View details" data-tip="${escHtml(tip)}">${icon(STATUS_ICON[st.cls], { size: 15 })}<span>${label}</span></button>`
+}
+
+/**
+ * When a deliverable runs and when it lands, one control: it opens the
+ * sprints picker. Late (past its sprints) and after-the-plan read differently.
+ */
+export function timingButton(d, da, { compact = false } = {}) {
+  const s = state.doc.settings
+  const lt = landingText(da.lands, s, da.span)
+  const when = da.span.whole ? 'Whole plan' : spanLabel(da.span)
+  const tone = !lt.late ? '' : lt.afterPlan ? ' timing--late' : ' timing--slip'
+  const name = escHtml(d.name.trim() || 'Deliverable')
+  return `<button type="button" class="timing${tone}${compact ? ' timing--compact' : ''}" data-action="window" data-id="${d.id}" data-key="dt-${d.id}" aria-haspopup="dialog"
+    aria-label="${name}: runs ${escHtml(when)}. ${escHtml(lt.text)}. Change its sprints" data-tip="${escHtml(`${when}. ${lt.text}. Click to change its sprints.`)}">${icon('calendar-range', { size: 14 })}<span class="timing-when">${escHtml(when)}</span>${compact ? '' : `<span class="timing-lands">${icon('diamond', { size: 11 })}${escHtml(lt.short)}</span>`}</button>`
 }
 
 function personIndicator(p, pa, counts) {
@@ -53,6 +69,9 @@ export function orderedDeliverables(list, a) {
     booked: d => a?.deliverables.get(d.id)?.got ?? 0,
     gap: d => a?.deliverables.get(d.id)?.gap ?? 0,
     people: d => d.members.length,
+    // Undated work (unsized, nobody on it) sorts after everything with a date.
+    lands: d => a?.deliverables.get(d.id)?.lands?.date?.getTime() ?? Infinity,
+    when: d => { const sp = a?.spans.get(d.id); return sp ? sp.a * 100 + sp.b : 0 },
   }[key]
   if (!by) return visible
   return visible.map((d, i) => ({ d, i })).sort((x, y) => {
@@ -101,7 +120,7 @@ export function renderRoster(a, flags) {
   $('rosterList').innerHTML = dropHere + people.map(p => {
     const pa = a.people.get(p.id)
     const pct = pa.cap ? Math.min(100, (pa.used / pa.cap) * 100) : 0
-    const band = pa.free < 0 ? 'over' : pa.free === 0 && pa.cap ? 'full' : 'free'
+    const band = pa.over ? 'over' : pa.free === 0 && pa.cap ? 'full' : 'free'
     const bits = [
       p.role && escHtml(p.role),
       p.load < 100 && `${p.load}%`,
@@ -117,7 +136,7 @@ export function renderRoster(a, flags) {
         <span class="person-role">${p.open ? `<span class="tag">open role</span>` : ''}${bits || (p.open ? '' : '&nbsp;')}</span>
       </span>
       <span class="person-cap" title="${fmtPct(pa.pct)} of their time booked: ${pa.used} of ${pa.cap} pts (${fmt(pa.raw)} before rounding${pa.lost.holiday + pa.lost.team + pa.lost.vacation ? `, after ${pa.lost.holiday + pa.lost.team + pa.lost.vacation} days off` : ''})">
-        <b>${Math.abs(pa.free)}</b><small>${pa.free < 0 ? 'over' : 'free'} of ${pa.cap}</small>
+        <b>${pa.free < 0 ? -pa.free : pa.over ? pa.overPts : pa.free}</b><small>${pa.free < 0 ? `over of ${pa.cap}` : pa.over ? `over in ${sprintList(pa.overSprints)}` : `free of ${pa.cap}`}</small>
       </span>
       <button type="button" class="icon-btn" data-action="edit-person" data-id="${p.id}" data-key="pe-${p.id}" aria-label="Edit ${escHtml(nameOf(p))}">${icon('pencil')}</button>
       <span class="cap-bar" aria-hidden="true"><i style="width:${pct}%"></i></span>
@@ -140,13 +159,13 @@ export function share(d, m, a, compact = false) {
   const pa = a.people.get(p.id)
   const sh = a.shares.get(shareKey(d.id, p.id))
   const carried = ui.carry?.person === p.id && ui.carry.from === d.id
-  return `<li class="share${compact ? ' share--compact' : ''}${ui.personFilter === p.id ? ' share--filtered' : ''}${p.open ? ' share--open' : ''}${pa.free < 0 ? ' share--over' : ''}${carried ? ' is-carried' : ''}"
+  return `<li class="share${compact ? ' share--compact' : ''}${ui.personFilter === p.id ? ' share--filtered' : ''}${p.open ? ' share--open' : ''}${pa.over ? ' share--over' : ''}${carried ? ' is-carried' : ''}"
       data-drag="person" data-person="${p.id}" data-from="${d.id}" data-key="s-${d.id}-${p.id}" tabindex="0"
       aria-label="${escHtml(nameOf(p))} gives ${fmtPct(sh.pct)} of their time, ${sh.points} points${carried ? ', picked up' : ''}. Enter to pick up and move.">
     ${compact ? '' : face(p, true, carried)}
     <span class="share-name" title="${escHtml(nameOf(p))}">${escHtml(compact || p.open ? nameOf(p) : compactName(p.name))}</span>
     <button type="button" class="share-pts" data-action="points" data-id="${d.id}" data-person="${p.id}" data-key="sp-${d.id}-${p.id}"
-      data-tip="${escHtml(nameOf(p))}: ${fmtPct(sh.pct)} of ${pa.cap} available points${pa.free < 0 ? `; ${-pa.free} points over-booked across the plan` : ''}.${sh.fixed ? ` Fixed at ${sh.points} points.` : ''} Click to edit this assignment."
+      data-tip="${escHtml(nameOf(p))}: ${fmtPct(sh.pct)} of ${Math.round(sh.winCap)} available points${d.window ? ` in ${escHtml(spanLabel(a.spans.get(d.id)))}` : ''}${pa.free < 0 ? `; ${-pa.free} points over-booked across the plan` : pa.over ? `; over-booked in ${sprintList(pa.overSprints)}` : ''}.${sh.fixed ? ` Fixed at ${sh.points} points.` : ''} Click to edit this assignment."
       aria-label="${escHtml(nameOf(p))}: ${fmtPct(sh.pct)}, ${sh.points} points${sh.fixed ? ', fixed' : ''}. Change"><span class="share-value">${sh.points}<span class="share-unit">pts</span></span><span class="share-pct">${fmtPct(sh.pct)}</span></button>
     <button type="button" class="share-x" data-action="unassign" data-id="${d.id}" data-person="${p.id}" aria-label="Take ${escHtml(nameOf(p))} off">${icon('x', { size: 14, stroke: 2.4 })}</button>
   </li>`
@@ -176,9 +195,9 @@ function renderBar() {
     `<button type="button" class="seg-btn" data-action="${attr}" data-${attr}="${k}" data-key="${attr}-${k}" aria-pressed="${cur === k}">${attr === 'view' ? icon(ic, { size: 15 }) : ''}${label}${attr === 'scope' ? ` <span class="chip-n">${n[k]}</span>` : ''}</button>`).join('')
   $('boardBar').innerHTML = `
     <div class="seg seg--sm" role="group" aria-label="Which deliverables">${seg(scopes, 'scope', ui.scope)}</div>
-    <div class="board-controls"><label class="board-sort"><span class="sr-only">Sort deliverables</span><select class="field" id="boardSort" data-key="board-sort" aria-label="Sort deliverables"><option value=""${!ui.sort.key ? ' selected' : ''}>Plan order</option><option value="priority:1"${ui.sort.key === 'priority' && ui.sort.dir === 1 ? ' selected' : ''}>Priority: highest first</option><option value="priority:-1"${ui.sort.key === 'priority' && ui.sort.dir === -1 ? ' selected' : ''}>Priority: lowest first</option><option value="status:1"${ui.sort.key === 'status' && ui.sort.dir === 1 ? ' selected' : ''}>Staffing: needs attention</option>${ui.sort.key && ui.sort.key !== 'priority' && !(ui.sort.key === 'status' && ui.sort.dir === 1) ? `<option value="custom" selected>${escHtml(ui.sort.key)}: ${ui.sort.dir === 1 ? 'ascending' : 'descending'}</option>` : ''}</select></label>
+    <div class="board-controls"><label class="board-sort"><span class="sr-only">Sort deliverables</span><select class="field" id="boardSort" data-key="board-sort" aria-label="Sort deliverables"><option value=""${!ui.sort.key ? ' selected' : ''}>Plan order</option><option value="priority:1"${ui.sort.key === 'priority' && ui.sort.dir === 1 ? ' selected' : ''}>Priority: highest first</option><option value="priority:-1"${ui.sort.key === 'priority' && ui.sort.dir === -1 ? ' selected' : ''}>Priority: lowest first</option><option value="status:1"${ui.sort.key === 'status' && ui.sort.dir === 1 ? ' selected' : ''}>Staffing: needs attention</option><option value="lands:1"${ui.sort.key === 'lands' && ui.sort.dir === 1 ? ' selected' : ''}>Lands: soonest first</option>${ui.sort.key && ui.sort.key !== 'priority' && !(ui.sort.key === 'status' && ui.sort.dir === 1) && !(ui.sort.key === 'lands' && ui.sort.dir === 1) ? `<option value="custom" selected>${escHtml(ui.sort.key)}: ${ui.sort.dir === 1 ? 'ascending' : 'descending'}</option>` : ''}</select></label>
     <label class="person-filter"><span class="sr-only">Filter by person</span><select class="field" id="personFilter" data-key="person-filter" aria-label="Filter by person"><option value="">Everyone</option>${doc.people.map(p => `<option value="${p.id}"${ui.personFilter === p.id ? ' selected' : ''}>${escHtml(nameOf(p))}</option>`).join('')}</select></label>
-    ${ui.scope === 'plan' ? `<div class="seg seg--sm" role="group" aria-label="View">${seg([['cards', 'layout-grid', 'Cards'], ['table', 'table-2', 'Table']], 'view', ui.view)}</div>` : ''}</div>`
+    ${ui.scope === 'plan' ? `<div class="seg seg--sm" role="group" aria-label="View">${seg([['cards', 'layout-grid', 'Cards'], ['table', 'table-2', 'Table'], ['map', 'chart-gantt', 'Map']], 'view', ui.view)}</div>` : ''}</div>`
   const list = ui.scope === 'plan' ? doc.deliverables : doc.backlog.filter(d => d.when === ui.scope)
   const person = doc.people.find(p => p.id === ui.personFilter)
   $('boardFilterNote').hidden = !person
@@ -196,9 +215,13 @@ export function renderBoard(a, flags) {
       <button type="button" class="btn btn--ghost btn--sm" data-action="cancel-carry">Cancel</button>`
   }
 
-  const cards = ui.scope === 'plan' && ui.view === 'cards'
+  const view = ui.scope === 'plan' ? ui.view : 'table'
+  const cards = view === 'cards'
   $('board').hidden = !cards
-  $('boardTable').hidden = cards
+  $('boardTable').hidden = view !== 'table'
+  $('boardMap').hidden = view !== 'map'
+  if (view !== 'map') $('boardMap').innerHTML = ''
+  if (view === 'map') { $('board').innerHTML = ''; $('boardTable').innerHTML = ''; renderMap(a); return }
   if (!cards) { $('board').innerHTML = ''; renderTable(a, flags); return }
   $('boardTable').innerHTML = ''
 
@@ -218,6 +241,7 @@ export function renderBoard(a, flags) {
       </header>
       <div class="deliv-planning">${priorityButton(d)}${progressButton(d)}</div>
       ${meter(d, da)}
+      <div class="deliv-timing">${timingButton(d, da)}</div>
       ${statusButton(d, st, da)}
       <ul class="shares" aria-label="People on ${escHtml(name)}">${d.members.map(m => share(d, m, a)).join('')}</ul>
       ${d.members.length ? '' : `<p class="drop-hint">${icon('circle-plus', { size: 14 })}Drop people here</p>`}

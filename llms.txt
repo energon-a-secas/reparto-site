@@ -9,7 +9,7 @@
 
 ## The model in one paragraph
 
-A story point is one focus day. A week has 5 working days; with the meeting day on, one goes to meetings, so 4 count. A 2-week sprint holds 8 points (a sprint cap can hold it lower, never higher). A plan is a number of sprints laid on real dates from a start day: 4 by default (two months of a quarter), 6 for the full quarter. One engineer's capacity is the points a sprint over the plan's sprints, minus public holidays for their country, team days off and their vacations, times their load. Only the full-time engineer is rounded onto the Fibonacci scale (nearest by default: 32 becomes 34); everyone else is scaled by that same factor, and the buffer comes off last. A share is a percentage of one person's planned capacity on one deliverable, so its points follow that capacity; one person's shares are rounded together so they always add up.
+A story point is one focus day. A week has 5 working days; with the meeting day on, one goes to meetings, so 4 count. A 2-week sprint holds 8 points (a sprint cap can hold it lower, never higher). A plan is a number of sprints laid on real dates from a start day: 4 by default (two months of a quarter), 6 for the full quarter. One engineer's capacity is the points a sprint over the plan's sprints, minus public holidays for their country, team days off and their vacations, times their load. Only the full-time engineer is rounded onto the Fibonacci scale (nearest by default: 32 becomes 34); everyone else is scaled by that same factor, and the buffer comes off last. A share is a percentage of one person's planned capacity on one deliverable, during the sprints that deliverable runs over (the whole plan by default), so its points follow that capacity; one person's shares are rounded together so they always add up. Capacity is split across sprints, so a person can be over-booked in some sprints while the quarter adds up, and each deliverable has a landing date: when its points reach its estimate.
 
 ## A plan document (JSON)
 
@@ -21,7 +21,7 @@ A story point is one focus day. A week has 5 working days; with the meeting day 
     "startDate": "2026-10-05",
     "countries": ["CL", "MX"],
     "weeksPerSprint": 2, "daysPerWeek": 5, "meetingDay": true, "pointsPerDay": 1,
-    "sprintCap": 0, "sprints": 4, "buffer": 0, "rounding": "nearest"
+    "sprintCap": 0, "sprints": 4, "buffer": 0, "rounding": "nearest", "fiscalStart": 10
   },
   "daysOff": [{ "date": "2026-11-20", "label": "Offsite", "country": "" }],
   "people": [
@@ -30,7 +30,9 @@ A story point is one focus day. A week has 5 working days; with the meeting day 
   ],
   "deliverables": [
     { "id": "payments", "name": "Payments API v2", "estimate": 55, "note": "",
-      "members": [{ "person": "ana", "pct": 50 }] }
+      "members": [{ "person": "ana", "pct": 50 }], "window": null },
+    { "id": "audit", "name": "Accessibility audit", "estimate": 8, "note": "",
+      "members": [{ "person": "ana", "pct": 25 }], "window": { "from": 1, "to": 2 } }
   ],
   "backlog": [
     { "id": "search", "name": "Search relevance", "estimate": 21, "note": "Next quarter",
@@ -48,6 +50,9 @@ Rules that trip generated documents:
 - `daysOff[].country` scopes a team day off to one country's people ('' is everyone). `settings.worked: [{ "country": "US", "date": "2026-10-12" }]` counts a public holiday as a working day there.
 - `backlog` (optional) holds deliverables out of this plan: `when` is `"later"` (a future plan) or `"done"` (shipped). Same shape as a deliverable; they count toward nothing.
 - `note` is free text up to 400 characters, shown on the card and carried into every export.
+- `window` is the sprints a deliverable runs over, `{ "from": 1, "to": 2 }` (1-based, inclusive), or `null` for the whole plan. A member's `pct` is then a percent of that person's time in those sprints, not of the whole plan: 25% of Ana over S1 to S2 is a quarter of her points in those two sprints. A window past a shorter plan is pulled back inside it (and flagged).
+- `fiscalStart` is the month (1 to 12) the fiscal year starts in; it only names quarters (10: October to December 2026 is Q1 FY27; 1: calendar quarters, Q4 2026). Default 10.
+- Every deliverable gets an estimated completion date: the working day its people's points add up to its estimate, or, short of that, the date at the same pace past its sprints.
 
 ## Deep link: open a plan in someone's browser
 
@@ -61,6 +66,6 @@ A prompt that works: "Produce a Reparto plan (schema: https://reparto.neorgon.co
 ## Exports
 
 From the Export menu (Tables and flags):
-- A `.xlsx` workbook: sheets By deliverable (with the note and the points lost to leave), By engineer, Assignments (one row per person per deliverable), Flags, Later and done, Settings.
+- A `.xlsx` workbook: sheets By deliverable (with its sprints, estimated completion, the note and the points lost to leave), By engineer, Assignments (one row per person per deliverable), Flags, Later and done, Settings.
 - Any one table as CSV (UTF-8 with a BOM; cells that would run as formulas are prefixed with an apostrophe), as tab-separated text for a paste into Google Sheets or Excel, or as a Markdown table.
 - The whole plan as a Markdown report (with Later and Done sections, and the leave that made a deliverable short) or as JSON (the document above).

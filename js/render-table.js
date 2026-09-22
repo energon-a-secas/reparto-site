@@ -6,8 +6,8 @@
 // people named, and a way back into the plan.
 
 import { state, ui } from './state.js'
-import { deliverableStatus, engineers } from './flags.js'
-import { share, noteLine, dropButton, statusButton, orderedDeliverables, filterEmpty, priorityButton, progressButton } from './render-board.js'
+import { deliverableStatus, engineers, landingText } from './flags.js'
+import { share, noteLine, dropButton, statusButton, orderedDeliverables, filterEmpty, priorityButton, progressButton, timingButton } from './render-board.js'
 import { icon, STATUS_ICON } from './icons.js'
 import { boxColorOf } from './planning.js'
 import { $, escHtml, plural } from './utils.js'
@@ -47,7 +47,9 @@ export function renderTable(a, flags) {
       <td class="t-priority">${priorityButton(d)}</td>
       <td class="num">${estButton(d)}</td>
       <td class="num">${da.got}</td>
-      <td class="num" title="${da.gap > 0 ? escHtml(engineers(da.gap, unit)) : ''}">${gap}</td>
+      <td class="num" title="${da.gap > 0 ? escHtml(engineers(da.gap, da.unitWindow || unit)) : ''}">${gap}</td>
+      <td class="t-when">${timingButton(d, da, { compact: true })}</td>
+      <td class="t-lands">${landsCell(da)}</td>
       <td class="t-people"><ul class="shares" aria-label="People on ${escHtml(name)}">${d.members.map(m => share(d, m, a, true)).join('')}</ul>${d.members.length ? '' : '<span class="t-empty">Nobody yet</span>'}${dropButton(d, da, carry)}</td>
       <td class="t-actions">${menuButton(d, name)}</td>
     </tr>`
@@ -57,17 +59,35 @@ export function renderTable(a, flags) {
     <table class="dtable">
       <caption class="sr-only">This plan's deliverables${key ? `, sorted by ${key}` : ''}</caption>
       <thead><tr>
-        ${sortHead('name', 'Deliverable')}${sortHead('progress', 'Status', 't-status')}${sortHead('priority', 'Priority', 't-priority')}${sortHead('estimate', 'Estimate', 'num')}${sortHead('booked', 'Booked', 'num')}${sortHead('gap', 'Short', 'num')}${sortHead('people', 'People')}
+        ${sortHead('name', 'Deliverable')}${sortHead('progress', 'Status', 't-status')}${sortHead('priority', 'Priority', 't-priority')}${sortHead('estimate', 'Estimate', 'num')}${sortHead('booked', 'Booked', 'num')}${sortHead('gap', 'Short', 'num')}${sortHead('when', 'When', 't-when')}${sortHead('lands', 'Lands', 't-lands')}${sortHead('people', 'People')}
         <th scope="col"><span class="sr-only">Actions</span></th>
       </tr></thead>
       <tbody>${body}</tbody>
       <tfoot><tr>
         <th scope="row" colspan="3">${ui.personFilter ? 'Whole plan · ' : ''}${plural(doc.deliverables.length, 'deliverable')}${a.unsized ? ` · <span class="warn-text">${a.unsized} unsized</span>` : ''}</th>
         <td class="num">${a.demand}</td><td class="num">${a.allocated}</td><td class="num">${a.shortfall ? `<span class="error-text">${a.shortfall}</span>` : '0'}</td>
+        <td colspan="2">${lastLanding(a)}</td>
         <td colspan="2">${a.capacity} pts of capacity · ${a.free} free${a.over ? ` · <span class="error-text">${a.over} over-booked</span>` : ''}</td>
       </tr></tfoot>
     </table>`
     : `<p class="t-none">${icon('circle-plus')}No deliverables in this plan yet. <button type="button" class="panel-link" data-action="add-deliverable">Add one</button></p>`
+}
+
+/** The estimated completion date: on time, after its sprints, or after the plan, each read differently. */
+function landsCell(da) {
+  const lt = landingText(da.lands, state.doc.settings, da.span)
+  const tone = !lt.date ? 'lands--none' : !lt.late ? 'lands--ok' : lt.afterPlan ? 'lands--late' : 'lands--slip'
+  return `<span class="lands ${tone}" title="${escHtml(lt.text)}">${lt.date ? icon('diamond', { size: 11 }) : ''}${escHtml(lt.short)}</span>`
+}
+
+/** The totals row's date: when the last dated deliverable lands. */
+function lastLanding(a) {
+  let last = null, late = false
+  for (const da of a.deliverables.values()) {
+    const d = da.lands?.date
+    if (d && (!last || d > last)) { last = d; late = !!da.lands.afterPlan }
+  }
+  return last ? `Last lands ${escHtml(landingText({ kind: 'on-time', date: last, sprint: 0 }, state.doc.settings).short)}${late ? ' <span class="error-text">(after the plan)</span>' : ''}` : ''
 }
 
 /** Later and Done: what left the plan, with its people named and a way back. */

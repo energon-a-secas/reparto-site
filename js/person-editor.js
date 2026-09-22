@@ -6,7 +6,9 @@
 // cannot disagree with the row.
 
 import { state, snapshot, commitFrom, person, deliverable, updatePerson, removePerson, assign, setShare, unassign } from './state.js'
-import { analyze, personCapacity, capFromRaw, shareKey, splitPoints, PCT_MIN, PCT_MAX } from './capacity.js'
+import { analyze, personCapacity, capFromRaw, shareKey, plannedSprints, PCT_MIN, PCT_MAX } from './capacity.js'
+import { splitExact, windowCap, spanLabel } from './timeline.js'
+import { sprintList } from './flags.js'
 import { parseISO, addDays, iso, planRange, workdaysIn, daysOffFor } from './calendar.js'
 import { cal, countryName, ensureHolidays } from './holidays.js'
 import { countryOptions } from './render-calendar.js'
@@ -181,16 +183,25 @@ function paintNote() {
   $('personCapNote').innerHTML = `${escHtml(steps.join(' '))} = <strong>${+pc.raw.toFixed(1)}</strong> raw; ${escHtml(scaled)}: <strong>${cap}</strong> planned.`
   const dup = v.sprintsOff > 0 && pc.lost.vacation > 0
   $('personLeaveWarn').hidden = !dup
-  // The split, rounded together exactly as the page rounds it (largest remainder).
+  // The split, rounded together exactly as the page rounds it (largest remainder), each share
+  // against its deliverable's sprints: 100% of a two-sprint deliverable is two sprints of their points.
   const rows = distRows()
-  const pts = splitPoints(cap, rows.map(r => r.pct))
-  rows.forEach((r, i) => { r.li.querySelector('.dist-pts').textContent = `${pts[i]} pts` })
-  const total = rows.reduce((t, r) => t + r.pct, 0)
+  const perSprint = plannedSprints(pc, cap)
+  const spans = rows.map(r => a.spans.get(r.deliv) || { a: 0, b: s.sprints - 1, whole: true })
+  const caps = spans.map(sp => (sp.whole ? cap : windowCap(perSprint, sp)))
+  const pts = splitExact(rows.map((r, i) => (caps[i] * r.pct) / 100))
+  rows.forEach((r, i) => { r.li.querySelector('.dist-pts').textContent = `${pts[i]} pts${spans[i].whole ? '' : ` in ${spanLabel(spans[i])}`}` })
+  const total = cap ? rows.reduce((t, r, i) => t + (r.pct * caps[i]) / cap, 0) : rows.reduce((t, r) => t + r.pct, 0)
   const used = pts.reduce((t, x) => t + x, 0)
+  // The busiest sprints: where the deliverables they are on overlap.
+  const load = Array.from({ length: s.sprints }, (_, i) => rows.reduce((t, r, j) => t + (i >= spans[j].a && i <= spans[j].b ? r.pct : 0), 0))
+  const peak = Math.max(0, ...load)
+  const hot = load.map((x, i) => (x > 100.5 ? i : -1)).filter(i => i >= 0)
   const partTime = v.load < 100 ? ` (${fmtPct((total * v.load) / 100)} of their week)` : ''
+  const over = used > cap || hot.length
   $('distTotal').innerHTML = rows.length
-    ? `<span class="dist-meter${used > cap ? ' dist-meter--over' : ''}" aria-hidden="true"><i style="width:${Math.min(100, total)}%"></i></span>
-       <span class="${used > cap ? 'error-text' : ''}">${fmtPct(total)} of their ${cap} pts booked${partTime}${used > cap ? `: ${used - cap} pts over` : used < cap ? `, ${cap - used} pts free` : ''}</span>`
+    ? `<span class="dist-meter${over ? ' dist-meter--over' : ''}" aria-hidden="true"><i style="width:${Math.min(100, total)}%"></i></span>
+       <span class="${over ? 'error-text' : ''}">${fmtPct(total)} of their ${cap} pts booked${partTime}${used > cap ? `: ${used - cap} pts over` : used < cap ? `, ${cap - used} pts free` : ''}${hot.length ? `. ${fmtPct(peak)} of their time in ${sprintList(hot)}, where their deliverables overlap` : ''}</span>`
     : '<span class="dist-empty">Not on any deliverable yet. Add them to one, or drag them onto a card.</span>'
 }
 

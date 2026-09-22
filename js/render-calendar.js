@@ -6,6 +6,7 @@
 import { state } from './state.js'
 import { sprintWindows, planRange, daysOffFor, parseISO, fmtDay, lastWorkday } from './calendar.js'
 import { countries, countryName, MAIN, TAGS } from './holidays.js'
+import { quartersAround, quarterOf, quarterMonths, quarterStartMonday, planQuarters, MONTH_NAMES } from './quarters.js'
 import { $, escHtml, plural } from './utils.js'
 
 const X_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>'
@@ -63,6 +64,38 @@ function weeksNote(start, s) {
   return start.getUTCDay() === 1
     ? `Sprints and their weeks count from the start date: each sprint is ${len}, Monday to Sunday. Move the start date and every sprint moves with it.`
     : `Sprints and their weeks count from the start date, a ${first}: each week runs ${first} to ${last}, and each sprint is ${len}. Working days are still ${workdays}, and the meeting day comes out of each of those weeks.`
+}
+
+/**
+ * The quarter picker: last quarter to six ahead, in the plan's fiscal
+ * calendar, plus whatever quarter the plan starts in if it is further out.
+ * Picking one moves the start to its first Monday; the sprints stay as set.
+ */
+function renderQuarters(s, range) {
+  const now = new Date(), today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))
+  const list = quartersAround(today, s.fiscalStart, 1, 6)
+  const cur = range ? quarterOf(range.from, s.fiscalStart) : null
+  if (cur && !list.some(q => q.label === cur.label)) list.push(cur)
+  list.sort((x, y) => x.from - y.from)
+  const here = quarterOf(today, s.fiscalStart).label
+  const sel = $('planQuarter')
+  const key = `${s.fiscalStart}|${cur?.label}|${here}|${s.startDate}`
+  if (sel.dataset.list !== key && document.activeElement !== sel) {
+    sel.innerHTML = list.map(q => {
+      const start = quarterStartMonday(q)
+      const selected = cur && q.label === cur.label
+      // The selected quarter keeps the plan's own start date, so choosing it again changes nothing.
+      return `<option value="${selected ? s.startDate : start}"${selected ? ' selected' : ''}>${escHtml(q.label)} · ${escHtml(quarterMonths(q))}${q.label === here ? ' (now)' : ''}</option>`
+    }).join('')
+    sel.dataset.list = key
+  }
+  const fs = $('fiscalStart')
+  if (fs.dataset.list !== String(s.fiscalStart) && document.activeElement !== fs) {
+    fs.innerHTML = MONTH_NAMES.map((m, i) => `<option value="${i + 1}"${i + 1 === s.fiscalStart ? ' selected' : ''}>${m}${i === 0 ? ' (calendar quarters)' : ''}</option>`).join('')
+    fs.dataset.list = String(s.fiscalStart)
+  }
+  const label = $('planQuarterLabel')
+  if (label) label.innerHTML = range ? `${escHtml(planQuarters(range, s.fiscalStart))}<span>${fmtDay(range.from)} to ${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)} · ${plural(s.sprints, 'sprint')}</span>` : ''
 }
 
 export function renderCalendar(a, cal) {
@@ -127,9 +160,10 @@ export function renderCalendar(a, cal) {
   const sd = $('startDate')
   if (document.activeElement !== sd) sd.value = s.startDate
   renderCountryPicks(s)
+  renderQuarters(s, range)
 
   $('calRange').innerHTML = range
-    ? `Runs <strong>${fmtDay(range.from, true)}</strong> to <strong>${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)}</strong>`
+    ? `<strong>${escHtml(planQuarters(range, s.fiscalStart))}</strong>: runs <strong>${fmtDay(range.from, true)}</strong> to <strong>${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)}</strong>`
     : 'Pick a start date'
   $('sprintStrip').innerHTML = sprintList
   $('calNote').textContent = range ? weeksNote(range.from, s) : ''
@@ -149,7 +183,7 @@ export function renderCalendar(a, cal) {
   $('dayOffCountryWrap').hidden = s.countries.length < 2
   // The folded line: enough to trust the numbers without opening the panel.
   $('calSummary').innerHTML = [
-    `<strong>${range ? `${fmtDay(range.from)} to ${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)}` : 'Choose a start date'}</strong>`,
+    `<strong>${range ? `${escHtml(planQuarters(range, s.fiscalStart))} · ${fmtDay(range.from)} to ${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)}` : 'Choose a start date'}</strong>`,
     `<span>${escHtml(s.countries.length ? s.countries.map(countryName).join(' + ') : 'No public holidays')}</span>`,
     `<span>${loading ? 'Loading holidays…' : `${plural(a.offDays, 'day')} off`}</span>`,
   ].join('')

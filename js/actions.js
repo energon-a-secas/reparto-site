@@ -2,8 +2,9 @@
 // The operations more than one input path reaches: a pointer drop, a
 // keyboard carry and a flag's fix all land here, so they cannot disagree.
 
-import { state, ui, snapshot, commitFrom, person, deliverable, findDeliverable, assign, unassign, moveShare, setShare, addPerson, scaleShares, moveDeliverable, removeDeliverable } from './state.js'
-import { analyze, shareKey, pctForPoints, trimShares, pinShares } from './capacity.js'
+import { state, ui, snapshot, commitFrom, person, deliverable, findDeliverable, assign, unassign, moveShare, setShare, addPerson, scaleShares, moveDeliverable, removeDeliverable, setWindow } from './state.js'
+import { analyze, shareKey, pctForPoints, trimShares, pinShares, freeIn } from './capacity.js'
+import { spanLabel } from './timeline.js'
 import { cal } from './holidays.js'
 import { afterChange, renderAll } from './render.js'
 import { showToast, fmtPct } from './utils.js'
@@ -18,7 +19,9 @@ const nameOf = p => p?.name.trim() || 'Unnamed'
  * whole plan. It is stored as the matching percentage of their capacity.
  */
 export function defaultShare(personId, delivId, a = analyze(state.doc, cal)) {
-  const free = a.people.get(personId)?.free ?? 0
+  // Free in the deliverable's own sprints: room in S5 does nothing for a card that runs S1 to S2.
+  const pa = a.people.get(personId), span = a.spans.get(delivId)
+  const free = pa && span ? freeIn(pa, span) : pa?.free ?? 0
   const need = deliverable(delivId)?.estimate ? a.deliverables.get(delivId).gap : 0
   const sprint = Math.max(1, a.sprint)
   if (need > 0) return free > 0 ? Math.min(free, need) : Math.min(need, sprint)
@@ -121,6 +124,37 @@ function keepOthers(delivId, change) {
 
 const WHEN = { plan: 'this plan', later: 'Later', done: 'Done' }
 
+/**
+ * Run a deliverable over other sprints (window null is the whole plan). By
+ * default each person keeps the points they give it, so fewer sprints mean a
+ * bigger share of their time in them, and an overlap shows up as a sprint
+ * over-booking; `keepPoints: false` keeps the percentages and lets the points
+ * follow the span. Their other cards are pinned either way.
+ */
+export function changeWindow(delivId, window, { keepPoints = true } = {}) {
+  const d = findDeliverable(delivId); if (!d) return false
+  const inPlan = !!deliverable(delivId)
+  const a = analyze(state.doc, cal)
+  const had = new Map(d.members.map(m => [m.person, a.shares.get(shareKey(delivId, m.person))?.points ?? 0]))
+  const done = keepOthers(delivId, () => {
+    if (!setWindow(delivId, window)) return false
+    if (keepPoints && inPlan) {
+      for (const m of deliverable(delivId).members) {
+        if (m.pct == null || !had.get(m.person)) continue       // fixed points stay fixed; an empty share stays empty
+        setShare(delivId, m.person, pctForPoints(state.doc, cal, delivId, m.person, had.get(m.person)))
+      }
+    }
+    return true
+  })
+  if (!done) return false
+  ui.carry = null
+  const b = analyze(state.doc, cal)
+  const span = b.spans.get(delivId)
+  const who = inPlan ? d.members.map(m => `${nameOf(person(m.person))} ${fmtPct(b.shares.get(shareKey(delivId, m.person)).pct)}`) : []
+  showToast(`${d.name.trim() || 'The deliverable'} runs ${spanLabel(span)}${who.length ? `: ${who.join(', ')} of their time there` : ''}`)
+  return true
+}
+
 /** Save metadata and an optional Done/restore move together as one undo step. */
 export function saveDeliverableDetails(delivId, fields) {
   const d = findDeliverable(delivId); if (!d) return
@@ -210,9 +244,10 @@ export function putDown(target) {
 // ── Flag fixes ───────────────────────────────────────────────
 // Every fix lands exactly: it computes the points it promises and stores the
 // percentage that gives them (pctForPoints), so a fix never raises a new flag.
-export function applyFix(action, arg, openEstimate) {
+export function applyFix(action, arg, open = {}) {
   // Instant scroll: the picker anchors to the card, so the card must be on screen first.
-  if (action === 'size') { show('deliverable', [arg], { instant: true }); openEstimate(arg); return }
+  if (action === 'size') { show('deliverable', [arg], { instant: true }); open.estimate?.(arg); return }
+  if (action === 'window') { show('deliverable', [arg], { instant: true }); open.window?.(arg); return }
   if (action === 'assign') {
     const [did, pid] = arg.split(':')
     dropPerson(pid, null, did)
@@ -222,7 +257,8 @@ export function applyFix(action, arg, openEstimate) {
   if (action === 'topup') {
     const [did, pid] = arg.split(':')
     const a = analyze(state.doc, cal)
-    const sh = a.shares.get(shareKey(did, pid)), free = a.people.get(pid)?.free ?? 0, gap = a.deliverables.get(did)?.gap ?? 0
+    const sh = a.shares.get(shareKey(did, pid)), gap = a.deliverables.get(did)?.gap ?? 0
+    const free = a.people.get(pid) ? freeIn(a.people.get(pid), a.spans.get(did)) : 0
     const n = Math.min(gap, free)
     if (!sh || n <= 0) return
     snapshot(); setShare(did, pid, pctForPoints(state.doc, cal, did, pid, sh.points + n)); afterChange()
@@ -232,13 +268,15 @@ export function applyFix(action, arg, openEstimate) {
   }
   if (action === 'rebalance') {
     const a = analyze(state.doc, cal)
-    const pa = a.people.get(arg); if (!pa?.pct) return
+    // Scale by the busiest sprint: with every deliverable on the whole plan that is their total, and
+    // with deliverables on their own sprints it is the one where they overlap.
+    const pa = a.people.get(arg); if (!pa?.peak) return
     const effective = new Map(state.doc.deliverables.filter(d => d.members.some(m => m.person === arg)).map(d => [d.id, a.shares.get(shareKey(d.id, arg)).pct]))
-    snapshot(); scaleShares(arg, 100 / pa.pct, effective); afterChange()
+    snapshot(); scaleShares(arg, 100 / pa.peak, effective); afterChange()
     const b = analyze(state.doc, cal)
     const split = state.doc.deliverables.filter(d => d.members.some(m => m.person === arg))
       .map(d => `${d.name || 'Untitled'} ${fmtPct(b.shares.get(shareKey(d.id, arg)).pct)}`).join(', ')
-    showToast(`${nameOf(person(arg))}: ${split}, ${Math.max(0, -b.people.get(arg).free)} over`)
+    showToast(`${nameOf(person(arg))}: ${split}, ${b.people.get(arg).overPts} over`)
     return
   }
   if (action === 'countries') {
