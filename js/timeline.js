@@ -7,7 +7,7 @@
 // quarter as a whole is not, and a deliverable has a date its points add up
 // to its estimate: the date it lands. Pure, like capacity.js.
 
-import { parseISO, addDays, planRange } from './calendar.js'
+import { parseISO, addDays, iso, planRange } from './calendar.js'
 import { quarterOf } from './quarters.js'
 
 /**
@@ -75,47 +75,85 @@ export function sprintAt(s, k) {
   return { i: k, from: addDays(start, k * len), to: addDays(start, (k + 1) * len) }
 }
 
-/** The working day a fraction of the way through sprint k: 0.5 of a 10-day sprint is its 5th working day. */
-function dayAt(s, k, fraction) {
+/**
+ * The days of sprint k a deliverable's points are earned on, as [date, share]
+ * adding up to 1: each person's points there spread over the days they work
+ * in it, so not on their holidays, team days off or vacation. `people` is
+ * [{ points: per plan sprint, off: Map(iso -> day off) }]. Null when nobody
+ * on it works in sprint k.
+ */
+export function earnedDays(s, k, people) {
   const w = sprintAt(s, k)
   if (!w) return null
-  const days = []
-  for (let d = w.from; d < w.to; d = addDays(d, 1)) if ((d.getUTCDay() || 7) <= s.daysPerWeek) days.push(d)
-  if (!days.length) return w.from
-  const at = Math.min(days.length, Math.max(1, Math.ceil(fraction * days.length - 1e-9)))
-  return days[at - 1]
+  const at = new Map()
+  let total = 0
+  for (const { points, off } of people) {
+    const x = points[k] || 0
+    if (x <= 1e-9) continue
+    const days = []
+    for (let d = w.from; d < w.to; d = addDays(d, 1)) if ((d.getUTCDay() || 7) <= s.daysPerWeek && !off?.has(iso(d))) days.push(d)
+    if (!days.length) continue
+    for (const d of days) at.set(+d, (at.get(+d) || 0) + x / days.length)
+    total += x
+  }
+  return total > 0 ? [...at].sort((a, b) => a[0] - b[0]).map(([t, x]) => [new Date(t), x / total]) : null
 }
 
-const FAR = 52       // sprints past a window beyond which "at this pace" stops meaning anything
+/**
+ * The day a fraction of the way through sprint k: through the days its points
+ * are earned on when they are known (`days`, from earnedDays), else through
+ * the sprint's weekdays: 0.5 of a 10-day sprint is its 5th working day.
+ */
+function dayAt(s, k, fraction, days = null) {
+  if (days?.length) {
+    let cum = 0
+    for (const [d, x] of days) { cum += x; if (cum >= fraction - 1e-9) return d }
+    return days[days.length - 1][0]
+  }
+  const w = sprintAt(s, k)
+  if (!w) return null
+  const weekdays = []
+  for (let d = w.from; d < w.to; d = addDays(d, 1)) if ((d.getUTCDay() || 7) <= s.daysPerWeek) weekdays.push(d)
+  if (!weekdays.length) return w.from
+  const at = Math.min(weekdays.length, Math.max(1, Math.ceil(fraction * weekdays.length - 1e-9)))
+  return weekdays[at - 1]
+}
+
+const FAR_DAYS = 730   // two years from the plan's start: past that, "at this pace" stops meaning anything
 
 /**
  * When a deliverable's points add up to its estimate. `perSprint` is what its
  * people put into each plan sprint (exact points). Inside its span it lands
- * on the working day the running total reaches the estimate; short of that,
- * it keeps the span's average pace past the span, and past the plan if need
- * be, and says so.
- *   { kind: 'unsized' | 'none' }                 no date to give
+ * on the day the running total reaches the estimate, counting only the days
+ * its people work when `people` is given (see earnedDays); short of that, it
+ * keeps the span's average pace past the span, and past the plan if need be,
+ * over plain weekdays, and says so.
+ *   { kind: 'unsized' | 'none' }                 no date to give (nobody on it)
+ *   { kind: 'idle' }                              people on it, none with time in its sprints
  *   { kind: 'on-time', sprint, date }            lands inside its span
  *   { kind: 'late', sprint, date, afterPlan }    at this pace, after its span
  *   { kind: 'far' }                               too slow to put a date on
  */
-export function landing(perSprint, estimate, span, s) {
+export function landing(perSprint, estimate, span, s, people = null) {
   if (!estimate) return { kind: 'unsized' }
   let total = 0
   for (let i = span.a; i <= span.b; i++) total += perSprint[i] || 0
-  if (total <= 1e-9) return { kind: 'none' }
+  if (total <= 1e-9) return { kind: people?.length ? 'idle' : 'none' }
   let cum = 0
   for (let i = span.a; i <= span.b; i++) {
     const p = perSprint[i] || 0
-    if (p > 1e-9 && cum + p >= estimate - 1e-6) return { kind: 'on-time', sprint: i, date: dayAt(s, i, (estimate - cum) / p) }
+    if (p > 1e-9 && cum + p >= estimate - 1e-6) return { kind: 'on-time', sprint: i, date: dayAt(s, i, (estimate - cum) / p, people && earnedDays(s, i, people)) }
     cum += p
   }
   const pace = total / spanLength(span)
   const extra = (estimate - total) / pace
   const whole = Math.ceil(extra - 1e-9)
-  if (whole > FAR) return { kind: 'far' }
   const sprint = span.b + whole
-  return { kind: 'late', sprint, date: dayAt(s, sprint, extra - (whole - 1)), afterPlan: sprint >= s.sprints }
+  // Two years of calendar time whatever the sprint length (52 sprints was one year of weekly sprints and four of monthly ones).
+  if (sprint * s.weeksPerSprint * 7 >= FAR_DAYS) return { kind: 'far' }
+  const date = dayAt(s, sprint, extra - (whole - 1))
+  if (date && (date - parseISO(s.startDate)) / 86400000 >= FAR_DAYS) return { kind: 'far' }
+  return { kind: 'late', sprint, date, afterPlan: sprint >= s.sprints }
 }
 
 // ── The map's dates ──────────────────────────────────────────

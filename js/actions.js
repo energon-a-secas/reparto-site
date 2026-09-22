@@ -3,7 +3,7 @@
 // keyboard carry and a flag's fix all land here, so they cannot disagree.
 
 import { state, ui, snapshot, commitFrom, person, deliverable, findDeliverable, assign, unassign, moveShare, setShare, addPerson, scaleShares, moveDeliverable, removeDeliverable, setWindow } from './state.js'
-import { analyze, shareKey, pctForPoints, trimShares, pinShares, freeIn, scaleEstimate } from './capacity.js'
+import { analyze, shareKey, pctForPoints, trimShares, pinShares, freeIn, scaleEstimate, keepPoints, fitFactors } from './capacity.js'
 import { spanLabel, spanOf, spanLength } from './timeline.js'
 import { cal } from './holidays.js'
 import { afterChange, renderAll } from './render.js'
@@ -143,14 +143,14 @@ export function changeWindow(delivId, window, { mode = 'estimate' } = {}) {
   const was = d.estimate
   const a = analyze(state.doc, cal)
   const had = new Map(d.members.map(m => [m.person, a.shares.get(shareKey(delivId, m.person))?.points ?? 0]))
+  const fixed = []
   const done = keepOthers(delivId, () => {
     if (!setWindow(delivId, window)) return false
     if (mode === 'estimate') d.estimate = scaleEstimate(d.estimate, from, to)
     if (mode === 'points' && inPlan) {
-      for (const m of deliverable(delivId).members) {
-        if (m.pct == null || !had.get(m.person)) continue       // fixed points stay fixed; an empty share stays empty
-        setShare(delivId, m.person, pctForPoints(state.doc, cal, delivId, m.person, had.get(m.person)))
-      }
+      const kept = keepPoints(state.doc, cal, delivId, had)
+      state.doc = kept.doc
+      fixed.push(...kept.fixed)
     }
     return true
   })
@@ -159,8 +159,9 @@ export function changeWindow(delivId, window, { mode = 'estimate' } = {}) {
   const b = analyze(state.doc, cal)
   const span = b.spans.get(delivId) || spanOf(d, n)
   const est = was !== d.estimate ? `: estimate ${was} to ${d.estimate} pts` : ''
-  const who = inPlan && mode === 'points' ? d.members.map(m => `${nameOf(person(m.person))} ${fmtPct(b.shares.get(shareKey(delivId, m.person)).pct)}`) : []
-  showToast(`${d.name.trim() || 'The deliverable'} runs ${spanLabel(span)}${est}${who.length ? `: ${who.join(', ')} of their time there` : ''}`)
+  const who = inPlan && mode === 'points' ? d.members.filter(m => !fixed.includes(m.person)).map(m => `${nameOf(person(m.person))} ${fmtPct(b.shares.get(shareKey(delivId, m.person)).pct)}`) : []
+  const kept = fixed.map(pid => `${nameOf(person(pid))} keeps ${had.get(pid)} pts, more than their time there holds`)
+  showToast(`${d.name.trim() || 'The deliverable'} runs ${spanLabel(span)}${est}${who.length ? `: ${who.join(', ')} of their time there` : ''}${kept.length ? `${who.length ? '; ' : ': '}${kept.join('; ')}` : ''}`)
   return true
 }
 
@@ -277,11 +278,11 @@ export function applyFix(action, arg, open = {}) {
   }
   if (action === 'rebalance') {
     const a = analyze(state.doc, cal)
-    // Scale by the busiest sprint: with every deliverable on the whole plan that is their total, and
-    // with deliverables on their own sprints it is the one where they overlap.
-    const pa = a.people.get(arg); if (!pa?.peak) return
+    // Cut what is over, where it is over (fitFactors): with every deliverable on the whole plan that is an even
+    // scale to 100%, and with deliverables on their own sprints the ones in the busy sprints give way first.
+    const pa = a.people.get(arg); if (!(pa?.peak > 100)) return
     const effective = new Map(state.doc.deliverables.filter(d => d.members.some(m => m.person === arg)).map(d => [d.id, a.shares.get(shareKey(d.id, arg)).pct]))
-    snapshot(); scaleShares(arg, 100 / pa.peak, effective); afterChange()
+    snapshot(); scaleShares(arg, fitFactors(state.doc, a, arg), effective); afterChange()
     const b = analyze(state.doc, cal)
     const split = state.doc.deliverables.filter(d => d.members.some(m => m.person === arg))
       .map(d => `${d.name || 'Untitled'} ${fmtPct(b.shares.get(shareKey(d.id, arg)).pct)}`).join(', ')

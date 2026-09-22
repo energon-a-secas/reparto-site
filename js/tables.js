@@ -40,7 +40,7 @@ function flagsById(flags) {
 const landsIso = da => (da.lands?.date ? iso(da.lands.date) : '')
 const landsNote = da => ({
   'on-time': 'In its sprints', late: da.lands.afterPlan ? 'After the plan, at this pace' : 'After its sprints, at this pace',
-  far: 'Not within two years at this pace', none: 'No date: nobody on it', unsized: 'No date: not sized',
+  far: 'Not within two years at this pace', none: 'No date: nobody on it', idle: 'No date: nobody on it has time in its sprints', unsized: 'No date: not sized',
 }[da.lands?.kind] || '')
 
 export const TABLES = {
@@ -71,7 +71,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
         { key: 'landsNote', label: 'Completion', type: 'text' },
         { key: 'status', label: 'Staffing status', type: 'text' },
         { key: 'count', label: 'People', type: 'int' },
-        { key: 'split', label: 'Who, share of their capacity (pts)', type: 'text' },
+        { key: 'split', label: 'Who, share of their time in its sprints (pts)', type: 'text' },
         { key: 'leave', label: 'Lost to leave (pts)', type: 'int' },
         { key: 'note', label: 'Note', type: 'text' },
         { key: 'flags', label: 'Flags', type: 'text' },
@@ -122,7 +122,7 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
         { key: 'used', label: 'Booked (pts)', type: 'int' },
         { key: 'pct', label: 'Booked (of their capacity)', type: 'pct' },
         { key: 'free', label: 'Free (pts, negative is over)', type: 'int' },
-        { key: 'split', label: 'Split across deliverables (pts)', type: 'text' },
+        { key: 'split', label: 'Split across deliverables: share of their time in its sprints (pts)', type: 'text' },
         { key: 'flags', label: 'Flags', type: 'text' },
       ],
       rows: doc.people.map(p => {
@@ -144,8 +144,8 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
           pct: round1(pa.pct),
           free: pa.free,
           split: doc.deliverables.filter(d => d.members.some(m => m.person === p.id)).map(d => {
-            const sh = a.shares.get(shareKey(d.id, p.id))
-            return `${d.name.trim() || 'Untitled deliverable'} ${pctText(sh.pct)} (${sh.points})`
+            const sh = a.shares.get(shareKey(d.id, p.id)), span = a.spans.get(d.id)
+            return `${d.name.trim() || 'Untitled deliverable'} ${pctText(sh.pct)}${span && !span.whole ? ` of ${spanLabel(span)}` : ''} (${sh.points})`
           }).join('; '),
           flags: (byId.get(p.id) || []).join(' | '),
         }
@@ -158,17 +158,21 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
     const rows = []
     for (const d of doc.deliverables) {
       for (const m of d.members) {
-        const p = people.get(m.person), sh = a.shares.get(shareKey(d.id, m.person))
+        const p = people.get(m.person), sh = a.shares.get(shareKey(d.id, m.person)), pa = a.people.get(m.person)
         const country = p?.country || doc.settings.countries[0] || ''
+        const span = a.spans.get(d.id)
         rows.push({
           deliverable: d.name.trim() || 'Untitled deliverable',
           estimate: d.estimate ?? null,
           person: nameOf(m.person),
           role: p?.role || '',
           country: country ? countryName(country) : 'None',
+          sprints: `${spanLabel(span, { whole: false })}${span.whole ? ' (whole plan)' : ''}`,
           pct: round1(sh.pct),
+          // Of the whole plan: these add up per person to the engineers sheet's Booked, so a pivot can sum them.
+          planPct: pa?.cap ? round1((sh.pct * sh.winCap) / pa.cap) : 0,
           points: sh.points,
-          cap: a.people.get(m.person)?.cap ?? 0,
+          cap: pa?.cap ?? 0,
         })
       }
     }
@@ -180,7 +184,9 @@ export function buildTable(kind, doc, a, flags, { countryName = c => c } = {}) {
         { key: 'person', label: 'Person', type: 'text' },
         { key: 'role', label: 'Role', type: 'text' },
         { key: 'country', label: 'Holidays from', type: 'text' },
-        { key: 'pct', label: 'Share of their capacity', type: 'pct' },
+        { key: 'sprints', label: 'Sprints', type: 'text' },
+        { key: 'pct', label: 'Share of their time in its sprints', type: 'pct' },
+        { key: 'planPct', label: 'Share of their capacity (whole plan)', type: 'pct' },
         { key: 'points', label: 'Points', type: 'int' },
         { key: 'cap', label: 'Their planned capacity (pts)', type: 'int' },
       ],

@@ -10,15 +10,18 @@
 // each, and a bar keeps each person's points (changeWindow).
 
 import { state, person, commitFrom, updatePerson } from './state.js'
-import { parseISO, addDays, iso, fmtSpan, workdaysIn } from './calendar.js'
+import { parseISO, addDays, iso, fmtSpan } from './calendar.js'
 import { spanOf } from './timeline.js'
+import { analyze } from './capacity.js'
+import { cal } from './holidays.js'
 import { changeWindow } from './actions.js'
-import { afterChange } from './render.js'
+import { afterChange, renderAll } from './render.js'
 import { $, showToast, plural } from './utils.js'
 
 let drag = null
 let suppress = false          // the click that trails a drag must not also open the picker
 let tapStart = null           // a phone's first tap on a row: { pid, date }
+let touch = null              // a finger that is down on a row: a tap only if it lifts where it landed
 
 /** The map's dates, read off the rendered map so a pointer can be turned into a day. */
 function frame(el) {
@@ -37,8 +40,18 @@ export function bindMapEdit() {
   root.addEventListener('keydown', onKey)
   document.addEventListener('pointermove', onMove)
   document.addEventListener('pointerup', onUp)
-  document.addEventListener('pointercancel', () => { cleanup(); drag = null })
+  // A touch that turns into a scroll is cancelled: it is not a tap, and it forgets any first tap.
+  document.addEventListener('pointercancel', () => { cleanup(); drag = null; touch = null })
+  // Only the click that trails this gesture is swallowed. A drag that repaints the map removes the
+  // element it started on, so often no click trails it at all; a new gesture clears the flag.
+  document.addEventListener('pointerdown', () => { suppress = false }, true)
   document.addEventListener('click', e => { if (suppress) { suppress = false; e.stopPropagation(); e.preventDefault() } }, true)
+}
+
+/** A suppression that cannot outlive the gesture: gone after this task, trailing click or not. */
+function swallowTrailingClick() {
+  suppress = true
+  setTimeout(() => { suppress = false }, 0)
 }
 
 function onDown(e) {
@@ -51,10 +64,9 @@ function onDown(e) {
   const pid = track.dataset.vacTrack
   const day = dayAt(track, e.clientX, f)
   if (e.pointerType === 'touch') {
-    // Touch scrolls the map sideways, so a vacation is two taps rather than a drag.
-    if (tapStart?.pid === pid) { const from = tapStart.date; tapStart = null; addVacation(pid, from, day); return }
-    tapStart = { pid, date: day }
-    showToast(`First day ${fmtSpan(iso(day), iso(day))}. Tap the last day of the vacation on the same row`)
+    // Touch scrolls the map sideways, so a vacation is two taps rather than a drag, and a touch counts
+    // only when it lifts where it landed (onUp): a swipe to scroll is not a tap.
+    touch = { id: e.pointerId, pid, day, x: e.clientX, y: e.clientY }
     return
   }
   e.preventDefault()
@@ -87,6 +99,7 @@ function startBar(e, bar) {
 }
 
 function onMove(e) {
+  if (touch && e.pointerId === touch.id && Math.hypot(e.clientX - touch.x, e.clientY - touch.y) > 10) touch = null
   if (!drag) return
   if (drag.kind === 'vac') { drag.to = dayAt(drag.track, e.clientX, drag.f); paintGhost(); return }
   const dx = e.clientX - drag.x
@@ -108,16 +121,25 @@ function onMove(e) {
   drag.bar.setAttribute('aria-label', `Moving to ${drag.bar.querySelector('.map-bar-text').textContent}`)
 }
 
-function onUp() {
+function onUp(e) {
+  if (touch && e.pointerId === touch.id) { tap(touch); touch = null; return }
   if (!drag) return
   const d = drag
   cleanup()
   drag = null
-  if (d.kind === 'vac') { suppress = true; addVacation(d.pid, d.from, d.to); return }
+  if (d.kind === 'vac') { swallowTrailingClick(); addVacation(d.pid, d.from, d.to); return }
   if (!d.moved) return                    // a plain click: the picker opens through data-action
-  suppress = true
-  if (d.next.a === d.span.a && d.next.b === d.span.b) return
+  swallowTrailingClick()
+  // Dropped where it started: put back the text and label the drag previewed on the bar.
+  if (d.next.a === d.span.a && d.next.b === d.span.b) { renderAll(); return }
   setSpan(d.id, d.next)
+}
+
+/** A phone's tap on a row: the first marks the first day, a second on the same row the last. */
+function tap({ pid, day }) {
+  if (tapStart?.pid === pid) { const from = tapStart.date; tapStart = null; addVacation(pid, from, day); return }
+  tapStart = { pid, date: day }
+  showToast(`First day ${fmtSpan(iso(day), iso(day))}. Tap the last day of the vacation on the same row`)
 }
 
 function cleanup() {
@@ -144,15 +166,20 @@ function onKey(e) {
   if (next.a !== a || next.b !== b) setSpan(d.id, next)
 }
 
-/** One vacation, one undo step, and a toast that says what it costs. */
+/**
+ * One vacation, one undo step, and a toast that says what it costs: the
+ * working days it takes that they would otherwise have had, so not their
+ * holidays, team days off or days an earlier vacation already covers, the
+ * same count as the person editor and the flags.
+ */
 function addVacation(pid, x, y) {
   const p = person(pid); if (!p) return
   const [from, to] = x <= y ? [iso(x), iso(y)] : [iso(y), iso(x)]
   const before = JSON.stringify(state.doc)
+  const had = new Set(analyze(state.doc, cal).people.get(pid)?.vacationDays || [])
   updatePerson(pid, { vacations: [...(p.vacations || []), { from, to }] })
   if (!commitFrom(before)) return
   afterChange()
-  const dates = []
-  for (let d = parseISO(from); d <= parseISO(to); d = addDays(d, 1)) dates.push(iso(d))
-  showToast(`${p.name.trim() || 'Unnamed'}: vacation ${fmtSpan(from, to)}, ${plural(workdaysIn(dates, state.doc.settings), 'working day')} in this plan. Ctrl+Z takes it back`)
+  const cost = (analyze(state.doc, cal).people.get(pid)?.vacationDays || []).filter(d => !had.has(d)).length
+  showToast(`${p.name.trim() || 'Unnamed'}: vacation ${fmtSpan(from, to)}, ${plural(cost, 'working day')} in this plan. Ctrl+Z takes it back`)
 }

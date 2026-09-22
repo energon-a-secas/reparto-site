@@ -65,6 +65,7 @@ export function landingText(lands, s, span = null) {
     }
     case 'far': return { short: 'Not in sight', text: 'At this pace it does not land within two years', late: true, afterPlan: true }
     case 'none': return { short: 'No date', text: 'No date: nobody is on it yet' }
+    case 'idle': return { short: 'No date', text: `No date: nobody on it has time in ${span && !span.whole ? spanLabel(span) : 'this plan'}` }
     default: return { short: 'No date', text: 'No date until it is sized' }
   }
 }
@@ -190,12 +191,17 @@ export function computeFlags(doc, a = analyze(doc)) {
       // `also`: the cards this person is on carry the badge too, so a green card cannot hide it.
       const on = doc.deliverables.filter(d => d.members.some(m => m.person === p.id)).map(d => d.id)
       // Over across the quarter, or over in some sprints while the quarter adds up (two deliverables on the same sprints).
-      const worst = pa.overSprints.reduce((m, i) => Math.max(m, pa.sprintCap[i] ? (pa.booked[i] / pa.sprintCap[i]) * 100 : 0), 0)
-      const text = pa.free < 0
-        ? `${name} is booked ${Math.round(pa.pct)}% of their capacity (${pa.used} of ${pts(pa.cap)}), ${-pa.free} over.`
-        : `${name} is booked ${Math.round(worst)}% of their time in ${sprintList(pa.overSprints)}, ${pts(pa.overPts)} over. Move one of their deliverables to other sprints, or lower a share.`
+      const worst = Math.max(0, ...pa.overSprints.map(i => pa.load[i]))
+      const away = pa.overSprints.filter(i => !(pa.sprintCap[i] > 1e-9))
+      const quarter = `${Math.round(pa.pct)}% of their capacity (${pa.used} of ${pts(pa.cap)})`
+      // The plan when it is over in every sprint they have time in, else the sprints (with the plan too when it is over).
+      const everywhere = pa.free < 0 && pa.sprintCap.every((c, i) => !(c > 1e-9) || pa.overSprints.includes(i))
+      const text = pa.overSprints.length && !everywhere
+        ? `${name} is booked ${worst ? `${Math.round(worst)}% of their time in ${sprintList(pa.overSprints.filter(i => pa.sprintCap[i] > 1e-9))}` : ''}${worst && away.length ? ', and ' : ''}${away.length ? `points in ${sprintList(away)}, where they have no time` : ''}${pa.free < 0 ? `, and ${Math.round(pa.pct)}% of their capacity across the plan (${pa.used} of ${pts(pa.cap)});` : ','} ${pts(pa.overPts)} over. Move one of their deliverables to other sprints, or lower a share.`
+        : `${name} is booked ${quarter}, ${pa.overPts} over.`
+      // Scaling helps only when some sprint is past 100% of their time.
       add('error', 'load', text, { ...t, also: on },
-        pa.peak > 0 ? { action: 'rebalance', arg: p.id, label: `Scale ${name} to 100%` } : undefined)
+        pa.peak > 100 ? { action: 'rebalance', arg: p.id, label: `Bring ${name} back to 100%` } : undefined)
     }
     // Context switching is about deliverables at the same time: four in a row is a sequence, not a split.
     if (pa.concurrent > SPREAD_LIMIT) {

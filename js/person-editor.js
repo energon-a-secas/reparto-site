@@ -186,17 +186,18 @@ function paintNote() {
   // The split, rounded together exactly as the page rounds it (largest remainder), each share
   // against its deliverable's sprints: 100% of a two-sprint deliverable is two sprints of their points.
   const rows = distRows()
-  const perSprint = plannedSprints(pc, cap)
+  const perSprint = plannedSprints(pc, a)
   const spans = rows.map(r => a.spans.get(r.deliv) || { a: 0, b: s.sprints - 1, whole: true })
   const caps = spans.map(sp => (sp.whole ? cap : windowCap(perSprint, sp)))
   const pts = splitExact(rows.map((r, i) => (caps[i] * r.pct) / 100))
   rows.forEach((r, i) => { r.li.querySelector('.dist-pts').textContent = `${pts[i]} pts${spans[i].whole ? '' : ` in ${spanLabel(spans[i])}`}` })
   const total = cap ? rows.reduce((t, r, i) => t + (r.pct * caps[i]) / cap, 0) : rows.reduce((t, r) => t + r.pct, 0)
   const used = pts.reduce((t, x) => t + x, 0)
-  // The busiest sprints: where the deliverables they are on overlap.
-  const load = Array.from({ length: s.sprints }, (_, i) => rows.reduce((t, r, j) => t + (i >= spans[j].a && i <= spans[j].b ? r.pct : 0), 0))
+  // The busiest sprints: where the deliverables they are on overlap (a sprint they have no time in holds no work).
+  const load = Array.from({ length: s.sprints }, (_, i) => (perSprint[i] > 1e-9 ? rows.reduce((t, r, j) => t + (i >= spans[j].a && i <= spans[j].b ? r.pct : 0), 0) : 0))
   const peak = Math.max(0, ...load)
-  const hot = load.map((x, i) => (x > 100.5 ? i : -1)).filter(i => i >= 0)
+  // Over by half a point of their time or more, the same line the page draws (analyze's overSprints).
+  const hot = load.map((x, i) => (((x - 100) / 100) * perSprint[i] >= 0.5 ? i : -1)).filter(i => i >= 0)
   const partTime = v.load < 100 ? ` (${fmtPct((total * v.load) / 100)} of their week)` : ''
   const over = used > cap || hot.length
   $('distTotal').innerHTML = rows.length

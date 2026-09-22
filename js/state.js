@@ -328,14 +328,17 @@ export function assign(delivId, personId, pct, fixedPct = 0) {
   return true
 }
 /**
- * Multiply every share a person holds by `factor` (Scale to 100%). A
+ * Multiply the shares a person holds by `factor`: one number for all of
+ * them, or Map(delivId -> factor) for each (Scale to 100%, fitFactors). A
  * fixed-points share goes through `effective`, its percent as analysed.
  */
 export function scaleShares(personId, factor, effective = new Map()) {
   for (const d of state.doc.deliverables) {
     const m = d.members.find(x => x.person === personId)
     if (!m) continue
-    m.pct = pct2((m.pct ?? effective.get(d.id) ?? 0) * factor)
+    const f = typeof factor === 'number' ? factor : factor.get(d.id) ?? 1
+    if (f === 1 && m.pct != null) continue
+    m.pct = pct2((m.pct ?? effective.get(d.id) ?? 0) * f)
     delete m.points
   }
 }

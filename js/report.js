@@ -97,7 +97,9 @@ export function toMarkdown(doc, a, { cal, countryName = c => c, today = new Date
       const country = p.country ? countryName(p.country) : s.countries.length ? `${countryName(s.countries[0])} (default)` : 'none'
       const on = doc.deliverables.filter(d => d.members.some(m => m.person === p.id)).map(d => {
         const sh = a.shares.get(shareKey(d.id, p.id))
-        return `${d.name.trim() || 'Untitled deliverable'} ${sh.points} (${pctText(sh.pct)})`
+        // A share on part of the plan is a percentage of their time in those sprints, so it says which.
+        const span = a.spans.get(d.id)
+        return `${d.name.trim() || 'Untitled deliverable'} ${sh.points} (${pctText(sh.pct)}${span && !span.whole ? ` of ${spanLabel(span)}` : ''})`
       }).join(', ') || 'nothing yet'
       return `| ${cell(p.name.trim() || 'Unnamed')}${p.open ? ' (open role)' : ''} | ${cell(p.role) || 'none'} | ${cell(country)} | ${cell(off)} | ${pa.cap} | ${pa.used} | ${pctText(pa.pct)} | ${pa.free} | ${cell(on)} |`
     }),

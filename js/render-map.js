@@ -19,7 +19,7 @@ import { planRange, daysOffFor, addDays, iso, parseISO, fmtDay, fmtSpan, lastWor
 import { planQuarters, monthsIn, quarterOf } from './quarters.js'
 import { spanLabel, sprintAt, mapRange } from './timeline.js'
 import { cal } from './holidays.js'
-import { face, orderedDeliverables, filterEmpty } from './render-board.js'
+import { face, orderedDeliverables, filterEmpty, dropButton } from './render-board.js'
 import { icon, STATUS_ICON } from './icons.js'
 import { $, escHtml } from './utils.js'
 
@@ -111,7 +111,7 @@ export function renderMap(a) {
         aria-label="${name}'s vacation, ${fmtSpan(v.from, v.to)}. Change or remove">${icon('tree-palm', { size: 12 })}<span>${fmtSpan(v.from, v.to)}</span></button>`
     }).join('')
     return `<div class="map-row map-row--person${pa.over ? ' is-over' : ''}">
-      <div class="map-label" data-drag="person" data-person="${p.id}" tabindex="0" aria-label="${name}${p.open ? ', open role' : ''}: ${pa.cap} pts${pa.over ? `, over-booked${pa.overSprints.length ? ` in ${sprintList(pa.overSprints)}` : ''}` : ''}. Enter to pick up">
+      <div class="map-label" data-drag="person" data-person="${p.id}" data-key="ml-${p.id}" tabindex="0" aria-label="${name}${p.open ? ', open role' : ''}: ${pa.cap} pts${pa.over ? `, over-booked${pa.overSprints.length ? ` in ${sprintList(pa.overSprints)}` : ''}` : ''}. Enter to pick up">
         ${face(p, true)}<span class="map-name">${name}</span><span class="map-est" title="Planned points">${pa.cap}</span>
         <button type="button" class="icon-btn map-edit" data-action="edit-person" data-id="${p.id}" data-key="me-${p.id}" aria-label="Edit ${name}: load, country and vacations">${icon('pencil', { size: 14 })}</button>
       </div>
@@ -121,6 +121,7 @@ export function renderMap(a) {
 
   // ── Deliverables: a bar over its sprints, filled as far as it is staffed, and a diamond where it lands ──
   const list = orderedDeliverables(doc.deliverables, a)
+  const carry = ui.carry && doc.people.find(p => p.id === ui.carry.person)
   const delivRows = list.map(d => {
     const da = a.deliverables.get(d.id)
     const st = deliverableStatus(d, da, a, doc)
@@ -136,9 +137,12 @@ export function renderMap(a) {
       const flip = past || days(m.from, at) / m.n > 0.86
       marker = `<span class="map-land${lt.late ? (lt.afterPlan ? ' map-land--late' : ' map-land--slip') : ''}${flip ? ' map-land--flip' : ''}" style="left:${pos(at)}" title="${escHtml(lt.text)}">${icon('diamond', { size: 12 })}<span>${past ? '→ ' : ''}${escHtml(lt.short)}</span></span>`
     }
-    return `<div class="map-row map-row--deliv" data-drop="deliverable" data-deliv="${d.id}">
-      <div class="map-label"><span class="status-icon status--${st.cls}" title="${escHtml(st.text)}">${icon(STATUS_ICON[st.cls], { size: 14 })}</span><span class="map-name" title="${name}">${name}</span><span class="map-est">${d.estimate ?? '?'}</span></div>
-      <div class="map-track" data-bar-track="${d.id}">
+    // The row carries the card's id and its estimate control, so a flag's jump, "Size it" and
+    // "Change its sprints" land here as they do on the cards; a carried person has a keyboard drop.
+    const drop = dropButton(d, da, carry)
+    return `<div class="map-row map-row--deliv" id="d-${d.id}" data-drop="deliverable" data-deliv="${d.id}">
+      <div class="map-label"><span class="status-icon status--${st.cls}" title="${escHtml(st.text)}">${icon(STATUS_ICON[st.cls], { size: 14 })}</span><span class="map-name" title="${name}">${name}</span><button type="button" class="map-est${d.estimate ? '' : ' map-est--missing'}" data-action="estimate" data-id="${d.id}" data-key="de-${d.id}" aria-haspopup="dialog" aria-label="${name}: ${d.estimate ? `estimate ${d.estimate} pts` : 'not sized'}. Change the estimate">${d.estimate ?? '?'}</button></div>
+      <div class="map-track" data-bar-track="${d.id}">${drop ? `<span class="map-drop">${drop}</span>` : ''}
         <button type="button" class="map-bar status--${st.cls}${d.estimate ? '' : ' map-bar--unsized'}" style="${place(from, to)}" data-action="window" data-id="${d.id}" data-key="dt-${d.id}" data-bar="${d.id}" aria-haspopup="dialog"
           aria-label="${name}, ${escHtml(st.text)}: ${escHtml(spanLabel(da.span))}, ${da.got} of ${d.estimate ?? 'unsized'} pts. ${escHtml(lt.text)}. Change its sprints"
           data-tip="${escHtml(`${st.text} · ${spanLabel(da.span)} · ${da.got} of ${d.estimate ?? '?'} pts · ${lt.text}. Drag to move it, drag an end to resize, click for exact sprints.`)}">
@@ -152,11 +156,12 @@ export function renderMap(a) {
     <section class="map" aria-label="${title} on the map" style="--map-days:${m.n}" data-from="${iso(m.from)}" data-days="${m.n}">
       ${head(title)}
       <p class="map-hint">${hint}</p>
-      <div class="map-body">${gridLayer}${rows || `<p class="map-empty">${empty}</p>`}</div>
+      <div class="map-body">${gridLayer}${rows || empty}</div>
     </section>`
 
-  $('boardMap').innerHTML = !list.length && ui.personFilter ? filterEmpty() : `
-    ${table('people', 'People', `${icon('users', { size: 14 })}Each bar is a person's schedule: a vacation, a holiday or a team day off replaces the bar on its days, and each sprint shows the points they have there (booked of available when those differ). Drag across a row to add a vacation.`, personRows, 'Nobody yet.')}
-    ${table('deliverables', 'Deliverables', `${icon('target', { size: 14 })}A bar runs over the deliverable's sprints and fills as far as it is staffed; the diamond is where it lands. Drag a bar to move it, an end to resize it.`, delivRows, 'No deliverables yet.')}
+  // Filtered to someone on no deliverable, the map still shows their row: planning their time off is what it is for.
+  $('boardMap').innerHTML = `
+    ${table('people', 'People', `${icon('users', { size: 14 })}Each bar is a person's schedule: a vacation, a holiday or a team day off replaces the bar on its days, and each sprint shows the points they have there (booked of available when those differ). Drag across a row to add a vacation.`, personRows, '<p class="map-empty">Nobody yet.</p>')}
+    ${table('deliverables', 'Deliverables', `${icon('target', { size: 14 })}A bar runs over the deliverable's sprints and fills as far as it is staffed; the diamond is where it lands. Drag a bar to move it, an end to resize it.`, delivRows, ui.personFilter ? `<div class="map-empty">${filterEmpty()}</div>` : '<p class="map-empty">No deliverables yet.</p>')}
     <p class="map-legend"><span class="map-key map-key--work"></span>Working, sprint full <span class="map-key map-key--some"></span>Room left <span class="map-key map-key--over"></span>Over-booked <span class="map-key map-key--vac"></span>Vacation <span class="map-key map-key--holiday"></span>Public holiday <span class="map-key map-key--team"></span>Team day off <span class="map-key map-key--after"></span>Not in this plan ${icon('diamond', { size: 12 })} Lands</p>`
 }

@@ -80,13 +80,15 @@ function landsCell(da) {
   return `<span class="lands ${tone}" title="${escHtml(lt.text)}">${lt.date ? icon('diamond', { size: 11 }) : ''}${escHtml(lt.short)}</span>`
 }
 
-/** The totals row's date: when the last dated deliverable lands. */
+/** The totals row's date: when the last deliverable lands, or that one does not land in sight at all. */
 function lastLanding(a) {
-  let last = null, late = false
+  let last = null, late = false, far = 0
   for (const da of a.deliverables.values()) {
+    if (da.lands?.kind === 'far') { far += 1; continue }
     const d = da.lands?.date
     if (d && (!last || d > last)) { last = d; late = !!da.lands.afterPlan }
   }
+  if (far) return `Last lands: not in sight <span class="error-text">(${far === 1 ? 'one deliverable does' : `${far} deliverables do`} not land within two years at this pace)</span>`
   return last ? `Last lands ${escHtml(landingText({ kind: 'on-time', date: last, sprint: 0 }, state.doc.settings).short)}${late ? ' <span class="error-text">(after the plan)</span>' : ''}` : ''
 }
 

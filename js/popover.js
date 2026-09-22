@@ -3,7 +3,7 @@
 // is remembered by data-key, not by node, because every change re-renders.
 
 import { state, snapshot, commitFrom, deliverable, findDeliverable, person, updatePerson, updateDeliverable, setShare } from './state.js'
-import { SCALE, fibCeil, analyze, shareKey, pctForPoints, freeIn, scaleEstimate, PCT_MIN, PCT_MAX } from './capacity.js'
+import { SCALE, fibCeil, analyze, shareKey, pctForPoints, freeIn, scaleEstimate, keepPoints, PCT_MIN, PCT_MAX } from './capacity.js'
 import { engineers, landingText, sprintList } from './flags.js'
 import { sprintWindows, lastWorkday, fmtDay, fmtSpan, parseISO } from './calendar.js'
 import { spanLabel, spanOf, spanLength } from './timeline.js'
@@ -58,6 +58,7 @@ function open(key, html, label, focus = '') {
   if (!anchor) return null
   anchorKey = key
   const pop = $('pop')
+  pop.onchange = null                       // the last popover's change handler must not follow it into this one
   pop.setAttribute('aria-label', label)
   pop.innerHTML = html
   place(anchor)
@@ -315,23 +316,21 @@ export function openWindow(delivId) {
     const oldLen = spanLength(before.spans.get(delivId))
     nd.window = w
     if (mode() === 'estimate') nd.estimate = scaleEstimate(d.estimate, oldLen, spanLength(spanOf(nd, s.sprints)))
-    if (mode() === 'points') {
-      for (const m of nd.members) {
-        const had = before.shares.get(shareKey(delivId, m.person))?.points
-        if (m.pct != null && had) m.pct = pctForPoints(next, cal, delivId, m.person, had)
-      }
-    }
-    const b = analyze(next, cal), db = b.deliverables.get(delivId)
+    let work = next, fixed = []
+    if (mode() === 'points') ({ doc: work, fixed } = keepPoints(next, cal, delivId, new Map(nd.members.map(m => [m.person, before.shares.get(shareKey(delivId, m.person))?.points ?? 0]))))
+    const b = analyze(work, cal), db = b.deliverables.get(delivId)
     const est = nd.estimate !== d.estimate ? ` Estimate ${d.estimate} to <strong>${nd.estimate} pts</strong>.` : d.estimate ? ` Estimate stays ${d.estimate} pts.` : ''
     const who = nd.members.map(m => {
       const p = person(m.person), sh = b.shares.get(shareKey(delivId, m.person)), pa = b.people.get(m.person)
       const over = pa.overSprints.filter(i => i >= db.span.a && i <= db.span.b)
-      return `${escHtml(p?.name.trim() || 'Unnamed')} ${sh.points} pts, ${fmtPct(sh.pct)} of their time there${over.length ? ` <span class="error-text">(over-booked in ${sprintList(over)})</span>` : ''}`
+      const share = fixed.includes(m.person) ? 'kept as points, more than their time there holds' : `${fmtPct(sh.pct)} of their time there`
+      return `${escHtml(p?.name.trim() || 'Unnamed')} ${sh.points} pts, ${share}${over.length ? ` <span class="error-text">(over-booked in ${sprintList(over)})</span>` : ''}`
     })
     pop.querySelector('#winPreview').innerHTML = `${escHtml(spanLabel(db.span))}.${est}${who.length ? ` ${who.join('; ')}.` : ''} ${escHtml(landingText(db.lands, s, db.span).text)}.`
     repositionPop()
   }
-  pop.addEventListener('change', e => { if (e.target.matches('select, input')) preview() })
+  // onchange, not addEventListener: #pop is shared, and a listener added per opening outlived its popover.
+  pop.onchange = e => { if (e.target.matches('select, input')) preview() }
   preview()
   pop.onclick = e => {
     if (e.target.closest('[data-pop="close"]')) { closePop(); return }

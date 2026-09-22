@@ -15,7 +15,7 @@
 // vacation day, a load step or a holiday moves a person smoothly instead of
 // jumping them from 34 to 21 at a Fibonacci boundary.
 
-import { personSprints } from './calendar.js'
+import { personSprints, daysOffFor } from './calendar.js'
 import { splitExact, spanOf, spanLength, windowCap, spread, landing } from './timeline.js'
 import { quarterOf, shiftQuarter, quarterStartMonday } from './quarters.js'
 
@@ -154,30 +154,44 @@ function leaveOf(p, doc, cal, scale, cap, sprintCap) {
   const noLeave = p.sprintsOff ? capFromRaw(pcL.raw, scale) : noVacation
   return {
     vacation: Math.max(0, noVacation - cap), away: Math.max(0, noLeave - noVacation), capNoVacation: noVacation, capNoLeave: noLeave,
-    sprintNoVacation: plannedSprints(pcV, noVacation), sprintNoLeave: plannedSprints(pcL, noLeave),
+    sprintNoVacation: plannedSprints(pcV, scale), sprintNoLeave: plannedSprints(pcL, scale),
   }
 }
 
 /**
- * A person's planned points per sprint, as exact shares of their capacity in
- * proportion to what the calendar gives them in each sprint. Exact, not
- * whole: rounding 34 into 9, 9, 8, 8 gave the first half of a plan a point
- * more than the second. A whole-plan share still uses the whole capacity.
+ * A person's planned points per sprint: each sprint's own raw points, scaled
+ * like everyone's (the full-timer's rounding factor, then the buffer), and
+ * never rounded. Exact, not whole: rounding 34 into 9, 9, 8, 8 gave the first
+ * half of a plan a point more than the second. And each sprint's own: sharing
+ * out the rounded total made a vacation in S3 move S1's points, and charged a
+ * card on S1 for leave it never touched. They add up to the capacity before it
+ * is rounded; a whole-plan share still uses the rounded capacity.
+ * `a` is anything with unit, unitRaw and keep (analyze's result, or its scale).
  */
-export function plannedSprints(pc, cap) {
-  const w = pc.sprints.map(x => x.points * pc.factor)
-  const sum = w.reduce((t, x) => t + x, 0)
-  return sum > 0 ? w.map(x => (cap * x) / sum) : w.map(() => 0)
+export function plannedSprints(pc, a) {
+  const k = a.unitRaw > 0 && a.unit > 0 ? a.unit / a.unitRaw : 1
+  return pc.sprints.map(x => x.points * pc.factor * k * a.keep)
 }
 
 /** What a share is a percentage of: the whole capacity for the whole plan, else the span's exact points. */
 const spanCap = (sprintCap, total, span) => (!span || span.whole ? total : windowCap(sprintCap, span))
 
-/** Points someone has free in a span: each sprint's planned points less what is booked there. */
+/**
+ * The most whole points a new share on a span can take without over-booking
+ * anyone: a share takes the same fraction of their time in every sprint of
+ * its span, so the tightest sprint decides, and the plan as a whole must
+ * still add up. Adding the room left in each sprint promised points that
+ * landed in the full sprint too.
+ */
 export function freeIn(pa, span) {
-  let t = 0
-  for (let i = span.a; i <= span.b; i++) t += Math.max(0, (pa.sprintCap[i] || 0) - (pa.booked[i] || 0))
-  return Math.floor(t + 1e-9)
+  const whole = spanCap(pa.sprintCap, pa.cap, span)
+  if (!(whole > 0)) return 0
+  let room = Infinity
+  for (let i = span.a; i <= span.b; i++) {
+    const c = pa.sprintCap[i] || 0
+    if (c > 1e-9) room = Math.min(room, (Math.max(0, c - (pa.time[i] || 0)) / c) * whole)
+  }
+  return room === Infinity ? 0 : Math.max(0, Math.floor(Math.min(room, pa.free) + 1e-9))
 }
 
 /**
@@ -227,31 +241,36 @@ export function analyze(doc, cal = NO_CAL) {
   const scale = { unit, unitRaw, k: unitRaw > 0 && unit > 0 ? unit / unitRaw : 1, keep: 1 - (s.buffer || 0) / 100 }
   const bookable = capFromRaw(unitRaw, scale)
   // One full-timer's bookable points per sprint: what a deliverable's span is worth in engineers.
-  const ftPoints = ft.sprints.reduce((t, x) => t + x.points, 0)
-  const unitSprint = ft.sprints.map(x => (ftPoints > 0 ? (bookable * x.points) / ftPoints : 0))
+  const unitSprint = plannedSprints(ft, scale)
   const spans = new Map(doc.deliverables.map(d => [d.id, spanOf(d, n)]))
   const people = new Map()
   const exactSprint = zeros()
   for (const p of doc.people) {
     const pc = personCapacity(p, doc, cal)
     const cap = capFromRaw(pc.raw, scale)
-    const sprintCap = plannedSprints(pc, cap)
+    const sprintCap = plannedSprints(pc, scale)
     people.set(p.id, {
       raw: pc.raw, lost: pc.lost, away: pc.away, cap, sprintCap, used: 0, pct: 0, count: 0,
-      booked: zeros(), load: zeros(), active: zeros(),    // per sprint: points, percent of their time, deliverables at once
+      // Per sprint: the points that land there (whole shares spread), the time they take (exact, before any
+      // rounding: what over-booking is judged on), that time as a percent, and deliverables at once.
+      booked: zeros(), time: zeros(), load: zeros(), active: zeros(),
       leave: leaveOf(p, doc, cal, scale, cap, sprintCap), vacationDays: pc.vacationDays,
     })
     pc.sprints.forEach((x, i) => { exactSprint[i] += x.points * pc.factor * scale.k * scale.keep })
   }
   const shares = shareAnalysis(doc, people, spans)
   const leaveShares = leaveByShare(doc, people, spans)
+  // Each person's days off, worked out only for the people on a deliverable that lands: where its date falls.
+  const byId = new Map(doc.people.map(p => [p.id, p]))
+  const offs = new Map()
+  const offOf = pid => { if (!offs.has(pid)) offs.set(pid, byId.has(pid) ? daysOffFor(byId.get(pid), doc, cal.holidays) : new Map()); return offs.get(pid) }
   const deliverables = new Map()
   let demand = 0, allocated = 0, shortfall = 0, unsized = 0
   for (const d of doc.deliverables) {
     const span = spans.get(d.id)
     const perSprint = zeros()
     let got = 0, leaveNet = 0
-    const leave = []
+    const leave = [], earners = []
     for (const m of d.members) {
       const sh = shares.get(shareKey(d.id, m.person))
       if (!sh) continue
@@ -261,8 +280,15 @@ export function analyze(doc, cal = NO_CAL) {
         p.used += sh.points; p.count += 1
         // Share of their whole plan: a 100% share over two of four sprints is half of it.
         p.pct += p.cap ? (sh.pct * sh.winCap) / p.cap : (sh.pct * spanLength(span)) / (n || 1)
-        spread(sh.points, p.sprintCap, span, n).forEach((x, i) => { p.booked[i] += x; perSprint[i] += x })
-        for (let i = span.a; i <= span.b; i++) { p.load[i] += sh.pct; p.active[i] += 1 }
+        const pts = spread(sh.points, p.sprintCap, span, n)
+        pts.forEach((x, i) => { p.booked[i] += x; perSprint[i] += x })
+        earners.push({ points: pts, get off() { return offOf(m.person) } })
+        // A percentage takes that fraction of every sprint in its span, whatever the rounding gave it; fixed points take their points.
+        const time = sh.fixed ? spread(sh.points, p.sprintCap, span, n) : null
+        for (let i = span.a; i <= span.b; i++) {
+          p.time[i] += time ? time[i] : ((p.sprintCap[i] || 0) * sh.pct) / 100
+          if ((p.sprintCap[i] || 0) > 1e-9 || sh.fixed) p.active[i] += 1
+        }
       }
       const lv = leaveShares.get(shareKey(d.id, m.person))
       if (lv) {
@@ -277,7 +303,7 @@ export function analyze(doc, cal = NO_CAL) {
     if (gap > 0) shortfall += gap
     deliverables.set(d.id, {
       estimate: d.estimate, got, gap, leave, leavePts: Math.max(0, leaveNet),
-      span, perSprint, lands: landing(perSprint, d.estimate, span, s), unitWindow: span.whole ? bookable : Math.round(windowCap(unitSprint, span)),
+      span, perSprint, lands: landing(perSprint, d.estimate, span, s, d.members.length ? earners : null), unitWindow: span.whole ? bookable : Math.round(windowCap(unitSprint, span)),
     })
   }
   let capacity = 0, raw = 0, openCap = 0, free = 0, over = 0
@@ -285,10 +311,15 @@ export function analyze(doc, cal = NO_CAL) {
   for (const p of doc.people) {
     const a = people.get(p.id)
     a.free = a.cap - a.used
-    // A sprint booked past what they have in it, by at least half a point: the quarter can add up while S1 does not.
-    a.overSprints = a.booked.map((x, i) => (x - a.sprintCap[i] >= 0.5 ? i : -1)).filter(i => i >= 0)
-    a.overPts = a.free < 0 ? -a.free : a.overSprints.reduce((t, i) => t + Math.round(a.booked[i] - a.sprintCap[i]), 0)
-    a.over = a.free < 0 || a.overSprints.length > 0
+    // Their time in each sprint, as a percent; a sprint they have no time in holds no work, so it is never the busiest.
+    a.load = a.time.map((x, i) => (a.sprintCap[i] > 1e-9 ? (x / a.sprintCap[i]) * 100 : 0))
+    // A sprint whose time is booked past what they have, by at least half a point: the quarter can add up while S1
+    // does not. Judged on time, not rounded points, so a 100% share on one sprint is never over.
+    a.overSprints = a.time.map((x, i) => (x - a.sprintCap[i] >= 0.5 ? i : -1)).filter(i => i >= 0)
+    // One measure that only grows with the work booked: the larger of the plan's excess and the sprints' (summed, then rounded).
+    const sprintExcess = Math.round(a.overSprints.reduce((t, i) => t + a.time[i] - a.sprintCap[i], 0))
+    a.overPts = Math.max(a.free < 0 ? -a.free : 0, sprintExcess)
+    a.over = a.overPts > 0
     a.peak = n ? Math.max(0, ...a.load) : 0
     a.concurrent = n ? Math.max(0, ...a.active) : 0
     a.booked.forEach((x, i) => { bookedExact[i] += x })
@@ -424,6 +455,73 @@ export function pinShares(doc, cal, personId, wanted) {
     if (now !== pts) work = withShare(work, delivId, personId, pctForPoints(work, cal, delivId, personId, pts))
   }
   return work
+}
+
+/**
+ * Keep each member's points on a deliverable whose sprints changed: the
+ * percentage of their time there that holds them, or, when none can (no time
+ * in those sprints, or more than 400% of it), the points themselves as a
+ * fixed share, which the flags then call over-booked. Clamping to 0.01% or
+ * 400% instead lost the points for good, and moving the card back could not
+ * bring them back. `had` is Map(personId -> points). Pure.
+ */
+export function keepPoints(doc, cal, delivId, had) {
+  let work = doc
+  const fixed = []
+  const ids = (doc.deliverables.find(d => d.id === delivId)?.members || []).map(m => m.person)
+  for (const pid of ids) {
+    const want = had.get(pid)
+    if (!want) continue                                        // an empty share stays empty
+    work = withShare(work, delivId, pid, pctForPoints(work, cal, delivId, pid, want))
+    if (analyze(work, cal).shares.get(shareKey(delivId, pid))?.points === want) continue
+    const m = work.deliverables.find(d => d.id === delivId).members.find(x => x.person === pid)
+    m.points = want; delete m.pct
+    fixed.push(pid)
+  }
+  return { doc: work, fixed }
+}
+
+/**
+ * How much to cut each of a person's shares so no sprint is past their time,
+ * as Map(delivId -> factor from 0 to 1). First the shares that lie wholly in
+ * over-booked sprints give up what those sprints are over by, since cutting
+ * them idles no other sprint; then any sprint still over cuts every share on
+ * it by its own factor. Scaling every share by the busiest sprint idled
+ * sprints that were never over and left a whole-plan card short by more than
+ * the over-booking. With every share on the whole plan it is that same even
+ * scaling. Pure.
+ */
+export function fitFactors(doc, a, personId) {
+  const pa = a.people.get(personId)
+  const n = doc.settings.sprints
+  const mine = doc.deliverables.filter(d => d.members.some(m => m.person === personId))
+    .map(d => ({ id: d.id, span: a.spans.get(d.id), pct: a.shares.get(shareKey(d.id, personId))?.pct || 0 }))
+  const has = i => (pa?.sprintCap[i] || 0) > 1e-9
+  const on = (x, i) => i >= x.span.a && i <= x.span.b
+  const loads = f => Array.from({ length: n }, (_, i) => (has(i) ? mine.reduce((t, x, j) => t + (on(x, i) ? x.pct * f[j] : 0), 0) : 0))
+  let f = mine.map(() => 1)
+  const L = loads(f)
+  const over = new Set(L.map((x, i) => (x > 100 + 1e-6 ? i : -1)).filter(i => i >= 0))
+  if (over.size) {
+    const inside = mine.map(x => { for (let i = x.span.a; i <= x.span.b; i++) if (has(i) && !over.has(i)) return false; return true })
+    f = mine.map((x, j) => {
+      if (!inside[j]) return 1
+      let g = 1
+      for (let i = x.span.a; i <= x.span.b; i++) {
+        if (!has(i)) continue
+        const held = mine.reduce((t, y, k) => t + (inside[k] && on(y, i) ? y.pct : 0), 0)
+        if (held > 0) g = Math.min(g, Math.max(0, 1 - (L[i] - 100) / held))
+      }
+      return g
+    })
+    const L2 = loads(f)
+    f = f.map((g, j) => {
+      let h = g
+      for (let i = mine[j].span.a; i <= mine[j].span.b; i++) if (has(i) && L2[i] > 100 + 1e-6) h = Math.min(h, (g * 100) / L2[i])
+      return h
+    })
+  }
+  return new Map(mine.map((x, j) => [x.id, f[j]]))
 }
 
 /**

@@ -1099,6 +1099,13 @@ select.field { appearance: none; padding-right: 32px; background-image: url("dat
 .map-label--quarter span { color: var(--planner-muted); font-size: 11px; }
 .map-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
 .map-est { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+button.map-est { flex: none; min-width: 28px; height: 28px; padding: 0 6px; font: inherit; font-weight: 700; color: var(--text-primary); background: var(--planner-raised); border: 1px solid var(--border-subtle); border-radius: 6px; cursor: pointer; }
+button.map-est:hover { border-color: var(--accent-bright); }
+button.map-est:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; }
+.map-est--missing { color: var(--warn); border-style: dashed; }
+/* While a person is carried, each deliverable row offers the same drop the cards do, over the start of its track */
+.map-drop { position: absolute; left: 6px; top: 50%; z-index: 4; transform: translateY(-50%); }
+.map-drop .drop-btn { min-height: 30px; padding: 4px 10px; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
 .map-edit { width: 26px; height: 26px; }
 .map-row--person .map-label { cursor: grab; }
 .map-track { position: relative; min-width: 0; }
