@@ -7,7 +7,8 @@
 // quarter as a whole is not, and a deliverable has a date its points add up
 // to its estimate: the date it lands. Pure, like capacity.js.
 
-import { parseISO, addDays } from './calendar.js'
+import { parseISO, addDays, planRange } from './calendar.js'
+import { quarterOf } from './quarters.js'
 
 /**
  * Largest remainder: whole numbers for exact values, adding up to the
@@ -115,4 +116,29 @@ export function landing(perSprint, estimate, span, s) {
   if (whole > FAR) return { kind: 'far' }
   const sprint = span.b + whole
   return { kind: 'late', sprint, date: dayAt(s, sprint, extra - (whole - 1)), afterPlan: sprint >= s.sprints }
+}
+
+// ── The map's dates ──────────────────────────────────────────
+const MAP_PAST = 13 * 7      // how far past the quarter the map follows a late landing
+
+/**
+ * The map's dates: from the plan's start to the end of the quarter it ends
+ * in, or to the last landing past that (a quarter more at most), closed on a
+ * sprint boundary so the header reads in whole sprints.
+ */
+export function mapRange(a, s) {
+  const range = planRange(s)
+  if (!range) return null
+  const quarterEnd = quarterOf(range.last, s.fiscalStart).to
+  let end = range.to > quarterEnd ? range.to : quarterEnd
+  const cap = addDays(end, MAP_PAST)
+  for (const da of a.deliverables.values()) {
+    const d = da.lands?.date
+    if (d && d >= end) end = addDays(d, 1)
+  }
+  if (end > cap) end = cap
+  let k = s.sprints
+  while (sprintAt(s, k - 1).to < end) k += 1
+  const to = sprintAt(s, k - 1).to
+  return { from: range.from, to, planEnd: range.to, quarterEnd, n: Math.round((to - range.from) / 86400000), sprints: k }
 }

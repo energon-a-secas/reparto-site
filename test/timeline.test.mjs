@@ -5,8 +5,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { analyze, shareKey, pctForPoints, defaultStart, DEFAULT_SETTINGS, freeIn } from '../js/capacity.js'
 import { computeFlags, landingText } from '../js/flags.js'
-import { quarterOf, planQuarters, quartersAround, quarterStartMonday, monthsIn, shiftQuarter } from '../js/quarters.js'
-import { spanOf, landing, spread, splitExact } from '../js/timeline.js'
+import { quarterOf, planQuarters, quartersAround, quarterStartMonday, monthsIn, shiftQuarter, sprintsToEnd } from '../js/quarters.js'
+import { spanOf, landing, spread, splitExact, mapRange } from '../js/timeline.js'
 import { planRange, iso } from '../js/calendar.js'
 import { buildTable, settingsTable } from '../js/tables.js'
 import { toMarkdown } from '../js/report.js'
@@ -187,4 +187,29 @@ test('changing a deliverable\'s sprints scales its estimate by default: nearest 
   const da = analyze(doc).deliverables.get('x')
   assert.equal(da.got, 17)
   assert.equal(doc.deliverables[0].estimate, 21)
+})
+
+test('the map shows the whole quarter: a 4-sprint plan from 5 Oct runs to the sprint that covers 31 Dec, with 6 fitting', () => {
+  const doc = plan({ sprints: 4 }, [{}], [deliv('a', 8, [{ person: 'p0', pct: 50 }])])
+  const a = analyze(doc, cal)
+  const m = mapRange(a, doc.settings)
+  assert.equal(iso(m.from), '2026-10-05')
+  assert.equal(iso(m.planEnd), '2026-11-30')
+  assert.equal(iso(m.quarterEnd), '2027-01-01')
+  assert.ok(m.to >= m.quarterEnd, 'the map reaches the end of the quarter')
+  assert.equal(m.sprints, 7, 'closed on a sprint boundary: the 7th sprint (28 Dec to 10 Jan) holds the last days of the quarter')
+  assert.equal(iso(m.to), '2027-01-11')
+  assert.equal(m.n, 98)
+  assert.equal(sprintsToEnd(quarterOf(m.from, 10), m.from, 2), 6, 'the quarter holds 6 whole sprints from 5 Oct')
+  assert.equal(sprintsToEnd(quarterOf(m.from, 10), m.from, 1), 12)
+})
+
+test('the map follows a late landing past the quarter, but only a quarter further', () => {
+  const late = plan({ sprints: 4 }, [{}], [deliv('a', 89, [{ person: 'p0', pct: 20 }])])
+  const a = analyze(late, cal)
+  const da = a.deliverables.get('a')
+  assert.equal(da.lands.kind, 'late')
+  const m = mapRange(a, late.settings)
+  assert.ok(m.to > da.lands.date || m.to - m.quarterEnd >= 13 * 7 * 86400000, 'the landing is on the map, or the map stops a quarter past')
+  assert.ok(m.to - m.quarterEnd <= (13 * 7 + 14) * 86400000, 'never more than a quarter and a sprint past the quarter')
 })

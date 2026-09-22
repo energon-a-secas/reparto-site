@@ -282,7 +282,13 @@ function runAction(action, el = null) {
     }
     case 'drop': putDown(id); break
     case 'cancel-carry': cancelCarry(); break
-    case 'horizon': setAndRender('sprints', Number(el.dataset.sprints)); break
+    case 'horizon': {
+      const filling = el.dataset.key === 'fill-quarter'
+      setAndRender('sprints', Number(el.dataset.sprints))
+      // The button is gone once the plan fills the quarter; focus lands on the line that now says so.
+      if (filling) { $('planQuarterLabel')?.focus({ preventScroll: true }); showToast(`The plan now runs the whole quarter: ${plural(Number(el.dataset.sprints), 'sprint')}. Ctrl+Z takes it back`) }
+      break
+    }
     case 'toggle-meeting': setAndRender('meetingDay', !state.doc.settings.meetingDay); break
     case 'filter': ui.filter = el.dataset.filter; renderAll(); break
     case 'toggle-info': ui.showInfo = !ui.showInfo; renderAll(); break

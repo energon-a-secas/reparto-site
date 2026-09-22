@@ -1040,8 +1040,13 @@ select.field { appearance: none; padding-right: 32px; background-image: url("dat
 }
 
 /* ── Quarters, sprints a deliverable runs in, landing dates ─── */
-.plan-quarter { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 4px; font: 600 13px/1.4 var(--planner-font); color: var(--accent-bright); }
-.plan-quarter span { font-weight: 500; color: var(--planner-muted); }
+.plan-quarter { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 4px; font: 500 13px/1.4 var(--planner-font); color: var(--planner-muted); }
+.plan-quarter strong { font-weight: 700; color: var(--accent-bright); }
+.plan-quarter:focus { outline: none; }
+.plan-quarter:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 3px; border-radius: 4px; }
+.plan-quarter .plan-quarter-plan { color: var(--text-secondary); }
+.plan-quarter .chip-btn { min-height: 26px; }
+.cal-range .chip-btn { margin-left: 4px; min-height: 26px; }
 .plan-quarter:empty { display: none; }
 .period-fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
 .field.field--quarter { width: auto; min-width: 230px; }
@@ -1072,12 +1077,16 @@ select.field { appearance: none; padding-right: 32px; background-image: url("dat
 .win-mode input { margin-top: 1px; }
 
 /* ── The map ───────────────────────────────────────────────── */
-.map-wrap { position: relative; overflow-x: auto; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); }
+/* One horizontal scroll for both tables, so People and Deliverables stay aligned day for day */
+.map-wrap { position: relative; overflow-x: auto; display: flex; flex-direction: column; gap: 18px; padding-bottom: 4px; }
 .map {
   --map-label: 190px;
   position: relative; min-width: calc(var(--map-label) + var(--map-days) * 7px);
   font: 500 12px/1.3 var(--planner-font);
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
 }
+.map-hint { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 11px; color: var(--planner-muted); background: var(--planner-surface); border-bottom: 1px solid var(--border-subtle); }
+.map-hint .ico { flex: none; color: var(--accent-bright); }
 .map-head { position: sticky; top: 0; z-index: 3; display: grid; grid-template-columns: var(--map-label) 1fr; background: var(--planner-raised); border-bottom: 1px solid var(--border); }
 .map-row { position: relative; z-index: 1; display: grid; grid-template-columns: var(--map-label) 1fr; min-height: 44px; border-bottom: 1px solid var(--border-subtle); }
 .map-label {
@@ -1086,9 +1095,8 @@ select.field { appearance: none; padding-right: 32px; background-image: url("dat
 }
 .map-head .map-label { background: var(--planner-raised); }
 .map-label--quarter { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; grid-row: span 2; }
-.map-label--quarter strong { font-size: 15px; color: var(--accent-bright); }
+.map-label--quarter strong { font-size: 14px; color: var(--text-primary); text-transform: uppercase; letter-spacing: .04em; }
 .map-label--quarter span { color: var(--planner-muted); font-size: 11px; }
-.map-label--sub { display: none; }
 .map-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
 .map-est { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .map-edit { width: 26px; height: 26px; }
@@ -1110,27 +1118,27 @@ select.field { appearance: none; padding-right: 32px; background-image: url("dat
 .map-after { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .035) 0 6px, transparent 6px 12px); }
 .map-today { position: absolute; top: 0; bottom: 0; border-left: 2px solid var(--info); }
 .map-today span { position: absolute; top: 2px; left: 4px; font-size: 10px; font-weight: 700; color: var(--info); }
-.map-section { position: relative; z-index: 1; display: flex; align-items: baseline; gap: 8px; padding: 10px 12px 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--planner-muted); background: var(--planner-surface); border-bottom: 1px solid var(--border-subtle); }
-.map-section .ico { align-self: center; }
-.map-section small { font-size: 11px; font-weight: 500; text-transform: none; letter-spacing: 0; }
 .map-empty { position: relative; z-index: 1; padding: 10px 12px; color: var(--planner-muted); background: var(--planner-surface); }
-.map-off { position: absolute; top: 6px; bottom: 16px; border-radius: 3px; }
+/* A person's schedule: the bar is their working days, and a day off replaces it (an override, not a layer on top) */
+.map-track--sched { min-height: 48px; }
+.map-work { position: absolute; top: 21px; bottom: 9px; border-radius: 3px; }
+.map-work--full { background: color-mix(in oklch, var(--ok) 70%, transparent); }
+.map-work--some { background: color-mix(in oklch, var(--ok) 32%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ok) 60%, transparent); }
+.map-work--idle { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+.map-work--over { background: color-mix(in oklch, var(--err) 75%, transparent); }
+.map-sched-label { position: absolute; top: 4px; height: 14px; display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 10px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-secondary); pointer-events: none; }
+.map-sched-label--over { color: var(--err); }
+.map-sched-label--idle { color: var(--planner-muted); font-weight: 500; }
+.map-off { position: absolute; top: 21px; bottom: 9px; border-radius: 3px; }
 .map-off--holiday { background: color-mix(in oklch, var(--info) 35%, transparent); }
 .map-off--team { background: color-mix(in oklch, var(--accent) 35%, transparent); }
 .map-vac {
-  position: absolute; top: 6px; bottom: 16px; display: flex; align-items: center; gap: 4px; min-width: 6px; padding: 0 6px; overflow: hidden;
+  position: absolute; top: 19px; bottom: 7px; z-index: 1; display: flex; align-items: center; gap: 4px; min-width: 6px; padding: 0 6px; overflow: hidden;
   font: 600 11px/1 var(--planner-font); color: oklch(22% 0.03 82); white-space: nowrap;
   background: var(--warn); border: 0; border-radius: 4px; cursor: pointer;
 }
 .map-vac:hover, .map-vac:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 1px; }
-.map-load { position: absolute; bottom: 3px; height: 9px; display: flex; align-items: center; justify-content: center; border-radius: 2px; border-left: 2px solid var(--planner-surface); }
-.map-load b { font-size: 9px; font-weight: 700; line-height: 1; color: oklch(20% 0.02 260); }
-.map-load--idle { background: var(--surface-2); }
-.map-load--idle b { color: var(--planner-muted); }
-.map-load--some { background: color-mix(in oklch, var(--ok) 55%, transparent); }
-.map-load--full { background: var(--ok); }
-.map-load--over { background: var(--err); }
-.map-ghost { position: absolute; top: 6px; bottom: 16px; border-radius: 4px; background: color-mix(in oklch, var(--warn) 45%, transparent); outline: 1px dashed var(--warn); pointer-events: none; }
+.map-ghost { position: absolute; top: 19px; bottom: 7px; border-radius: 4px; background: color-mix(in oklch, var(--warn) 45%, transparent); outline: 1px dashed var(--warn); pointer-events: none; }
 .map-row--deliv .map-track { min-height: 44px; }
 .map-bar {
   position: absolute; top: 8px; bottom: 8px; display: flex; align-items: center; overflow: hidden; padding: 0; min-width: 8px;
@@ -1158,9 +1166,15 @@ body.is-map-dragging, body.is-map-dragging * { cursor: grabbing !important; user
 .map-key--team { background: color-mix(in oklch, var(--accent) 35%, transparent); }
 .map-key--vac { background: var(--warn); }
 .map-key--over { background: var(--err); }
+.map-key--work { background: color-mix(in oklch, var(--ok) 70%, transparent); }
+.map-key--some { background: color-mix(in oklch, var(--ok) 32%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ok) 60%, transparent); }
+.map-key--after { background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .25) 0 3px, transparent 3px 6px); }
 @media (max-width: 760px) {
-  .map { --map-label: 128px; min-width: calc(var(--map-label) + var(--map-days) * 7px); }
-  .map-section small { display: none; }
+  .map { --map-label: 132px; min-width: calc(var(--map-label) + var(--map-days) * 7px); }
+  /* A phone's label column is the name: the avatar, the pencil and the status icon step aside (the roster has them) */
+  .map-label { gap: 6px; padding: 6px 8px; font-size: 12px; }
+  .map-row--person .map-label > .face, .map-row .map-label > .status-icon, .map-edit { display: none; }
+  .map-hint { position: sticky; left: 0; max-width: calc(100vw - 32px); }
   .field.field--quarter, .field.field--fiscal { min-width: 0; width: 100%; }
   .period-fields .cal-field { flex: 1 1 100%; }
 }

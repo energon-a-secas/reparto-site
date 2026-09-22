@@ -4,9 +4,9 @@
 // it is real, it just costs nobody a focus day.
 
 import { state } from './state.js'
-import { sprintWindows, planRange, daysOffFor, parseISO, fmtDay, lastWorkday } from './calendar.js'
+import { sprintWindows, planRange, daysOffFor, parseISO, fmtDay, lastWorkday, addDays } from './calendar.js'
 import { countries, countryName, MAIN, TAGS } from './holidays.js'
-import { quartersAround, quarterOf, quarterMonths, quarterStartMonday, planQuarters, MONTH_NAMES } from './quarters.js'
+import { quartersAround, quarterOf, quarterMonths, quarterStartMonday, planQuarters, sprintsToEnd, MONTH_NAMES } from './quarters.js'
 import { $, escHtml, plural } from './utils.js'
 
 const X_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>'
@@ -95,7 +95,28 @@ function renderQuarters(s, range) {
     fs.dataset.list = String(s.fiscalStart)
   }
   const label = $('planQuarterLabel')
-  if (label) label.innerHTML = range ? `${escHtml(planQuarters(range, s.fiscalStart))}<span>${fmtDay(range.from)} to ${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)} · ${plural(s.sprints, 'sprint')}</span>` : ''
+  if (label) label.innerHTML = range ? `<strong>${escHtml(cur.label)}</strong><span>${escHtml(quarterDates(cur))}</span><span class="plan-quarter-plan">${escHtml(planInQuarter(s, range, cur))}</span>${fillButton(s, range, cur)}` : ''
+}
+
+/** A quarter's own dates: "1 Oct to 31 Dec 2026". */
+const quarterDates = q => `${fmtDay(q.from)} to ${fmtDay(addDays(q.to, -1), true)}`
+
+const fits = (s, range, q) => sprintsToEnd(q, range.from, s.weeksPerSprint)
+
+/** Where the plan sits in its quarter: "Plan: 5 Oct to 27 Nov, 4 of the quarter's 6 sprints", or how far past it runs. */
+function planInQuarter(s, range, q) {
+  const end = lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek)
+  const n = fits(s, range, q)
+  const dates = `${fmtDay(range.from)} to ${fmtDay(end, end.getUTCFullYear() !== range.from.getUTCFullYear())}`
+  return s.sprints < n ? `Plan: ${dates}, ${s.sprints} of the quarter's ${n} sprints`
+    : s.sprints === n ? `Plan: ${dates}, the whole quarter (${plural(n, 'sprint')})`
+    : `Plan: ${dates}, ${plural(s.sprints, 'sprint')}, into ${planQuarters(range, s.fiscalStart).split(' to ').pop()}`
+}
+
+/** One click to plan the whole quarter, when the plan stops short of it. */
+function fillButton(s, range, q) {
+  const n = fits(s, range, q)
+  return s.sprints < n && n <= 13 ? `<button type="button" class="chip-btn" data-action="horizon" data-sprints="${n}" data-key="fill-quarter">Plan the whole quarter (${n} sprints)</button>` : ''
 }
 
 export function renderCalendar(a, cal) {
@@ -162,8 +183,9 @@ export function renderCalendar(a, cal) {
   renderCountryPicks(s)
   renderQuarters(s, range)
 
+  const q = range && quarterOf(range.from, s.fiscalStart)
   $('calRange').innerHTML = range
-    ? `<strong>${escHtml(planQuarters(range, s.fiscalStart))}</strong>: runs <strong>${fmtDay(range.from, true)}</strong> to <strong>${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)}</strong>`
+    ? `<strong>${escHtml(q.label)}</strong> is ${escHtml(quarterDates(q))}. ${escHtml(planInQuarter(s, range, q))}. ${fillButton(s, range, q)}`
     : 'Pick a start date'
   $('sprintStrip').innerHTML = sprintList
   $('calNote').textContent = range ? weeksNote(range.from, s) : ''
@@ -183,7 +205,7 @@ export function renderCalendar(a, cal) {
   $('dayOffCountryWrap').hidden = s.countries.length < 2
   // The folded line: enough to trust the numbers without opening the panel.
   $('calSummary').innerHTML = [
-    `<strong>${range ? `${escHtml(planQuarters(range, s.fiscalStart))} · ${fmtDay(range.from)} to ${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)}` : 'Choose a start date'}</strong>`,
+    `<strong>${range ? `${escHtml(planQuarters(range, s.fiscalStart))} · plan ${fmtDay(range.from)} to ${fmtDay(lastWorkday({ from: range.from, to: range.to }, s.daysPerWeek), true)}` : 'Choose a start date'}</strong>`,
     `<span>${escHtml(s.countries.length ? s.countries.map(countryName).join(' + ') : 'No public holidays')}</span>`,
     `<span>${loading ? 'Loading holidays…' : `${plural(a.offDays, 'day')} off`}</span>`,
   ].join('')

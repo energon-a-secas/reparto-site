@@ -49,6 +49,11 @@ export function quarterStartMonday(quarter) {
   return iso(d)
 }
 
+/** How many whole sprints fit between a start date and the end of a quarter: 6 two-week sprints from 5 Oct to 31 Dec. */
+export function sprintsToEnd(quarter, from, weeksPerSprint) {
+  return Math.max(1, Math.floor(Math.round((quarter.to - from) / 86400000) / (weeksPerSprint * 7)))
+}
+
 /** The quarters a picker offers: from `before` quarters ago to `after` ahead of today's. */
 export function quartersAround(today, fiscalStart = 1, before = 1, after = 6) {
   const here = quarterOf(today, fiscalStart)
