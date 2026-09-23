@@ -1,6 +1,2 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Reparto">
-  <path d="M32 0 59.7 16v32L32 64 4.3 48V16Z" fill="#0a0d1a"/>
-  <path d="M29 18a17 17 0 1 0 17 17H29Z" fill="#14b8a6"/>
-  <path d="M35 14a17 17 0 0 1 17 17H35Z" fill="#99f6e4"/>
-  <circle cx="32" cy="5" r="2.5" fill="#14b8a6"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img"><path d="M12.000,24.000L1.608,18.000L1.608,6.000L12.000,0.000L22.392,6.000L22.392,18.000Z" fill="#0a0d1a"/><g transform="translate(4.8562,4.8324) scale(0.596307)" fill="none" stroke="#14b8a6" stroke-width="2.767" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/>
+  <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></g><circle cx="12" cy="1.860" r="1.150" fill="#14b8a6"/></svg>
