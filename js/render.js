@@ -42,10 +42,12 @@ export function renderAll() {
   else if (inCard && document.activeElement === document.body) document.querySelector(`[data-key="de-${CSS.escape(inCard)}"]`)?.focus({ preventScroll: true })
 }
 
-const ORIGIN = { link: 'from a link', import: 'imported', example: 'the example', copy: 'a copy', restored: 'restored', blank: '' }
+const ORIGIN = { link: 'from a link', import: 'imported', example: 'the example', copy: 'a copy', restored: 'restored', workspace: 'from your workspace', blank: '' }
 
 function renderChrome() {
   $('firstRun').hidden = !ui.firstRun
+  // The workspace's team is offered where it helps: an empty plan, or the example on a first visit.
+  $('wsOffer').hidden = !(ui.firstRun || !state.doc.people.length)
   $('previousItem').hidden = !previousPlans().length
   // The plan switcher: every plan in this browser, the open one checked.
   const plans = listPlans()

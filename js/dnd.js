@@ -12,7 +12,9 @@
 
 import { ui, person } from './state.js'
 import { dropPerson, pickUp } from './actions.js'
-import { escHtml, initials, faceColor } from './utils.js'
+import { escHtml } from './utils.js'
+import { faceOf } from './workspace.js'
+import { faceStyle } from './render-board.js'
 import { icon } from './icons.js'
 
 const THRESHOLD = 8
@@ -99,7 +101,7 @@ function start() {
   drag.el.classList.add('is-drag-source')
   const g = document.createElement('div')
   g.className = 'drag-ghost'
-  g.innerHTML = `<span class="face" style="--face:${faceColor(drag.person)}">${escHtml(initials(p?.name))}<span class="carry-mark">${icon('hand-grab', { size: 12 })}</span></span><span class="ghost-hint"></span>`
+  g.innerHTML = `<span class="face" style="${faceStyle(p || { id: drag.person })}">${escHtml(faceOf(p || { id: drag.person }).text)}<span class="carry-mark">${icon('hand-grab', { size: 12 })}</span></span><span class="ghost-hint"></span>`
   document.body.appendChild(g)
   drag.ghost = g
 }

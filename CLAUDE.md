@@ -14,6 +14,7 @@ make serve     # http://localhost:8893 (ES modules: file:// will not load them)
 make test      # node --test: arithmetic, calendar, flags, exports, plans, review, and three breaker rounds
 make holidays  # regenerate data/holidays/ (needs npm; installs outside the repo)
 make icons     # regenerate js/icon-data.js from lucide-static (same)
+node test/workspace-browser.mjs   # the Workspace in Chromium, Firefox, WebKit (starts its own servers on 9362, 9363)
 ```
 
 ## Architecture
@@ -41,19 +42,23 @@ The model is pure and Node-tested; the view is ES modules over one `state.doc`.
 | `js/popover.js`, `js/person-editor.js`, `js/confirm.js` | estimate picker, share editor, a deliverable's menu (note, Later, Done, remove); the person modal; the Wipe and Delete confirmation |
 | `js/events.js`, `js/io.js`, `js/modal.js`, `js/seed.js`, `js/utils.js` | wiring, share link / Markdown report / JSON, dialogs, the example plan, helpers |
 | `js/report.js` | the Markdown report, pure (as-of date, formula steps, named holidays, per-sprint points, the On column) |
+| `js/workspace.js` | pure: the Neorgon Workspace adapter. `planFromWorkspace` (a team, or everyone, as a new plan: country, load times team share, work days and week start from `neo_me`), `workspacePayload` (the plan's people back: name, role as title, country; open roles left out), `prefsSettings`, `teamChoices`, `faceOf` (the kit's colour and initials). Tested in `test/workspace.test.mjs` |
+| `js/workspace-ui.js` | the kit's client: `initWorkspace` (actions "New plan from my team" and "Save this plan's people", Reparto's section of the Settings sheet, `usePrefs` for blank plans), `mountWorkspace` (the header gear, the `,` key, the team offer `#wsBanner`) |
 | `js/tables.js`, `js/formats.js`, `js/xlsx.js`, `js/export-dialog.js` | the plan as `{ name, columns, rows }` tables; CSV / TSV / Markdown; a library-free .xlsx (SpreadsheetML in a stored zip); the Export dialog. Pure except the dialog, tested in `test/tables.test.mjs` |
 
-Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,footer,beacon}.js`, `css/neorgon-*.css`.
+Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,footer,beacon,persist}.js`, `js/neorgon-workspace*.js` (`sync-workspace.sh`), `css/neorgon-*.css`.
 
 ## Data
 
-- `localStorage['reparto-v1-plans']` holds every plan: `{ v, active, plans: { id: { doc, savedAt, createdAt, origin } } }`, `origin` one of `link`, `import`, `example`, `blank`, `copy`, `restored`. `sessionStorage['reparto-v1-tab']` is the tab's open plan, so two tabs can hold two plans; `active` is where a new tab starts.
+- `localStorage['reparto-v1-plans']` holds every plan: `{ v, active, plans: { id: { doc, savedAt, createdAt, origin } } }`, `origin` one of `link`, `import`, `example`, `blank`, `copy`, `restored`, `workspace`. `sessionStorage['reparto-v1-tab']` is the tab's open plan, so two tabs can hold two plans; `active` is where a new tab starts.
 - `localStorage['reparto-v1']` still gets the open plan alone (`{ v, doc, savedAt }`), for a tab running older code. A browser with no plan store migrates it into one on load; once the store exists it is never read again.
 - `settings.fiscalStart` (1 to 12, default 10) is the month the fiscal year starts: it names quarters (Q1 FY27) and picks the default start, never moves a date. New plans inherit it from the open plan.
 - `deliverables[].window` is `{ from, to }` (1-based sprints, inclusive) or `null` for the whole plan.
 - `doc` is `{ title, settings, daysOff, people, deliverables, backlog }`. A share is `deliverables[].members[] = { person, pct }` (or legacy fixed `{ person, points }`). Deliverables also carry `priority` (`p1` through `p6`), `progress`, and `boxColor` (empty follows priority). Badge colors are fixed. Old priority names migrate to P1/P2/P3/P6, and legacy `priorityColor` becomes the box override. `backlog[]` is a deliverable plus `when: 'later' | 'done'`, members kept. Completion is derived from `when: 'done'`; its stored `progress` is the prior active state for restoration.
 - `settings.countries` is the team's list of ISO codes, the default first; `people[].country` overrides it per person. A plan saved with the older single `settings.country` migrates in `normalizeDoc`. `settings.worked` lists `{ country, date }` holidays a team works anyway; `daysOff[].country` scopes a team day off to one country ('' is everyone).
 - `localStorage['reparto-v1-previous']` keeps the last ten deleted or wiped plans (`{ title, savedAt, why, doc }`), under Plans > Restore a deleted plan. Entries from before named plans have no `why` and read as "replaced".
+- `people[].ws` (a workspace id) and `people[].color` (`#rrggbb`) are present only on people a plan took from the Neorgon Workspace, and only when valid; `normalizeDoc` drops anything else, so every older plan normalises exactly as before. A save sends `ws` back as the person's id, else `reparto-<id>`.
+- The Workspace kit keeps its own keys: `neo-ws:cache` (the team copy), `neo-ws:return-hash` (sessionStorage, a round trip), `neo-ws:comma-off`, and the `neo_me` cookie it reads for work days and week start.
 - `localStorage['reparto-v1-view']` remembers Cards, Table or Map for this viewer; nothing else about the view is saved.
 - A share link is `#p=` + base64url(JSON of `doc`). The fragment never reaches a server; `loadFromHash()` opens it through `openPlan()`, then clears the hash.
 - `data/holidays/<CC>.json` is `{ country, name, source, years: { 2026: [[iso, englishName, localName?], ...] }, tags? }`, public nationwide holidays 2025 to 2030, plus Argentina's decreed bridge and tourism days. `tags` maps a date to `bridge` or `often-worked` (US Columbus Day, Veterans Day). `index.json` lists the countries.
@@ -106,6 +111,12 @@ Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,f
 - **A tap picks a person up.** `justDragged()` swallows the click that trails every pointerup; without it, tapping a share inside a card picks it up and the trailing click drops it straight back on the same card.
 - **The calendar controls and the day-off form are static HTML**; only their outputs repaint. Rebuilding a date input while someone types in it resets its segment caret.
 - **Enter in the add-person form calls `requestSubmit()` explicitly.** Synthetic Enters (automation) carry keyCode 0 and never trigger implicit submission.
+
+- **The Workspace client starts before the hash is read** (`initWorkspace` in app.js before `loadFromHash`): a pick's answer arrives as `#neo-ws=`, which the client takes and strips, and a `#p=` share link must not see it.
+- **Work days are a count here.** Reparto's weeks work their first `daysPerWeek` weekdays (Monday on), so `neo_me`'s `d` gives only how many: `'71234'` plans as five days, Monday to Friday. The week start is exact: a new plan starts on next quarter's first day that is the visitor's week start, and the calendar already counts weeks from any start. The example and the quarter picker stay on Mondays.
+- **New plans take the device's defaults too.** `ws.prefs()` fills every key from the locale, so an en-US visitor with no `neo_me` gets Sunday starts on a blank plan. That is the plan's contract (`withDefaults`), not a bug.
+- **Faces come from the kit** (`faceOf`): the colour is the workspace person's own or one from their workspace id (`reparto-<id>` for someone Reparto made), on a solid disc with the kit's ink. `colorFor` and `inkOn` only return `#rrggbb`, which is why the inline style is safe.
+- **The plan's configuration sits below the board.** Capacity settings and the calendar moved under the work (Jump to: Rules); a blank plan still opens the calendar and focuses Name.
 
 ## Do not touch
 

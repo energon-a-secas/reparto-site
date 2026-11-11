@@ -13,15 +13,23 @@ import { renderTable } from './render-table.js'
 import { renderMap } from './render-map.js'
 import { icon, STATUS_ICON } from './icons.js'
 import { PRIORITIES, PROGRESS, priorityOf, progressOf, priorityColorOf, boxColorOf, sortByPriority } from './planning.js'
-import { $, escHtml, initials, compactName, faceColor, plural, fmtPct } from './utils.js'
+import { $, escHtml, compactName, plural, fmtPct } from './utils.js'
+import { faceOf } from './workspace.js'
 
 const focused = id => ui.focus?.ids.includes(id)
 const nameOf = p => p?.name.trim() || 'Unnamed'
 const fmt = n => (Number.isInteger(n) ? String(n) : n.toFixed(1))
 
+/**
+ * The face every Neorgon tool draws for this person: the workspace kit's
+ * colour (their own, else from their workspace id) and initials. colorFor and
+ * inkOn only ever return #rrggbb, and the text is escaped.
+ */
+export const faceStyle = p => { const f = faceOf(p); return escHtml(`--face:${f.bg};--face-ink:${f.ink}`) }
+
 /** A face disc; a carried person wears a hand on it. */
 export function face(p, sm = false, carried = false) {
-  return `<span class="face${sm ? ' face--sm' : ''}${p.open ? ' face--open' : ''}" style="--face:${faceColor(p.id)}" aria-hidden="true">${escHtml(initials(p.name))}${carried ? `<span class="carry-mark">${icon('hand-grab', { size: sm ? 10 : 12 })}</span>` : ''}</span>`
+  return `<span class="face${sm ? ' face--sm' : ''}${p.open ? ' face--open' : ''}" style="${faceStyle(p)}" aria-hidden="true">${escHtml(faceOf(p).text)}${carried ? `<span class="carry-mark">${icon('hand-grab', { size: sm ? 10 : 12 })}</span>` : ''}</span>`
 }
 
 /** A single status control opens the relevant review; details stay off the row. */
@@ -109,7 +117,7 @@ export function renderRoster(a, flags) {
   const people = state.doc.people
   $('rosterCount').textContent = `${plural(people.length, 'person', 'people')} · ${a.capacity} pts`
   if (!people.length) {
-    $('rosterList').innerHTML = '<li class="roster-empty">Nobody yet. Add the people this plan counts on, including open roles you are hiring for.</li>'
+    $('rosterList').innerHTML = '<li class="roster-empty">Nobody yet. Add the people this plan counts on below, open roles you are hiring for too, or start from your team in Settings (the gear, or the , key).</li>'
     return
   }
   // Carrying a share: the roster is where it comes off, so say so, and give keyboards a button for it.

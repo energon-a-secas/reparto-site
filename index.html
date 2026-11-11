@@ -32,6 +32,8 @@
   <link rel="stylesheet" href="https://cdn.neorgon.org/v1.0.0/styles/base.css">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/app.css">
+  <!-- Neorgon Workspace Kit (vendored): the Settings sheet behind the header gear and the , key. -->
+  <link rel="stylesheet" href="css/neorgon-workspace.css">
   <!-- Neorgon Header Kit (vendored; ?header=live swaps CSS to CDN). Keep after style.css, the kit owns the header. -->
   <script>(function(){var m=location.search.match(/[?&]theme=([\w-]+)/)||document.cookie.match(/(?:^|;\s*)neo_theme=([\w-]+)/);if(m&&m[1]!=='default')document.documentElement.dataset.theme=decodeURIComponent(m[1]);})();</script>
   <link rel="stylesheet" href="css/neorgon-header.css">
@@ -70,7 +72,7 @@
 
   <a class="skip-link" href="#main">Skip to content</a>
 
-  <header class="header-bar" data-header-mode="app">
+  <header class="header-bar" data-header-mode="app" data-header-skin="custom">
     <div class="header-logo">
       <a href="./" class="header-title-link">
         <img src="https://cdn.neorgon.org/v1.0.0/energon-classic-logo.png" class="header-logo-img" alt="">
@@ -148,10 +150,63 @@
         <nav class="workspace-nav" aria-label="Jump to a section">
           <a href="#roster"><span data-icon="users"></span>Team</a>
           <a href="#deliverables"><span data-icon="layout-grid"></span>Deliverables</a>
+          <a href="#calc"><span data-icon="sliders-horizontal"></span>Rules</a>
           <button type="button" class="flags-trigger" id="flagsBtn" data-action="flags" data-key="flags-trigger" aria-haspopup="dialog" aria-controls="flagsModal"><span data-icon="flag"></span><span>Flags</span><span class="flags-trigger-count" id="flagsTotal"></span></button>
         </nav>
       </div>
 
+
+      <div class="first-run" id="firstRun" role="note" hidden>
+        <div class="first-run-copy"><span data-icon="lightbulb"></span><p><strong>Explore an example plan.</strong> Try fixing a flag, or start fresh with your team.</p></div>
+        <div class="first-run-actions">
+          <button type="button" class="btn btn--primary btn--sm" data-action="blank">Start my own plan</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-action="dismiss-intro">Got it</button>
+        </div>
+      </div>
+
+      <!-- The Workspace kit's team offer (ws.banner), shown while the plan has nobody yet or is the example. -->
+      <div class="ws-offer" id="wsOffer" hidden><div id="wsBanner" hidden></div></div>
+
+      <section class="tiles" id="tiles" aria-label="Plan totals"></section>
+
+      <div class="workspace">
+        <!-- Roster and board share their own grid, so the sticky roster is bounded
+             by the board and cannot slide over the flags when they stack below. -->
+        <div class="workspace-main">
+        <aside class="roster" id="roster" data-drop="roster" aria-labelledby="rosterTitle">
+          <div class="panel-head">
+            <h2 class="panel-title" id="rosterTitle">Team</h2>
+            <span class="panel-count" id="rosterCount"></span>
+          </div>
+          <ul class="roster-list" id="rosterList"></ul>
+          <form class="roster-add" id="personForm" autocomplete="off">
+            <input class="field" id="personName" name="name" placeholder="Name" aria-label="New person's name" maxlength="80">
+            <input class="field" id="personRole" name="role" placeholder="Role" aria-label="New person's role" maxlength="80">
+            <button type="submit" class="btn btn--secondary btn--sm">Add</button>
+          </form>
+          <p class="panel-tip">Drag a person onto a deliverable, or click to pick them up.</p>
+          <details class="team-help">
+            <summary>How to split someone's time</summary>
+            <p>Click a share's number to change its percentage. Use the pencil beside a person to edit their full split, load, or leave. Drop a share back onto the team to remove it.</p>
+          </details>
+        </aside>
+
+        <section class="board" id="deliverables" aria-labelledby="boardTitle">
+          <div class="board-head">
+            <h2 class="board-title" id="boardTitle">Deliverables</h2>
+            <button type="button" class="btn btn--primary btn--sm" id="addDelivBtn" data-action="add-deliverable">Add deliverable</button>
+          </div>
+          <div class="board-bar" id="boardBar"></div>
+          <div class="board-filter-note" id="boardFilterNote" role="status" hidden></div>
+          <div class="carry-bar" id="carryBar" role="status" hidden></div>
+          <div class="board-grid" id="board"></div>
+          <div class="table-wrap" id="boardTable" hidden></div>
+          <div class="map-wrap" id="boardMap" hidden></div>
+        </section>
+        </div>
+      </div>
+
+      <!-- The plan's configuration sits below the work: the summaries above stay one click away (Jump to: Settings). -->
       <section class="calc" id="calc" aria-labelledby="calcTitle">
         <details class="capacity-rules" id="capacityRules">
           <summary class="capacity-summary">
@@ -216,55 +271,6 @@
           </div>
         </details>
       </section>
-
-      <div class="first-run" id="firstRun" role="note" hidden>
-        <div class="first-run-copy"><span data-icon="lightbulb"></span><p><strong>Explore an example plan.</strong> Try fixing a flag, or start fresh with your team.</p></div>
-        <div class="first-run-actions">
-          <button type="button" class="btn btn--primary btn--sm" data-action="blank">Start my own plan</button>
-          <button type="button" class="btn btn--ghost btn--sm" data-action="dismiss-intro">Got it</button>
-        </div>
-      </div>
-
-      <section class="tiles" id="tiles" aria-label="Plan totals"></section>
-
-      <div class="workspace">
-        <!-- Roster and board share their own grid, so the sticky roster is bounded
-             by the board and cannot slide over the flags when they stack below. -->
-        <div class="workspace-main">
-        <aside class="roster" id="roster" data-drop="roster" aria-labelledby="rosterTitle">
-          <div class="panel-head">
-            <h2 class="panel-title" id="rosterTitle">Team</h2>
-            <span class="panel-count" id="rosterCount"></span>
-          </div>
-          <ul class="roster-list" id="rosterList"></ul>
-          <form class="roster-add" id="personForm" autocomplete="off">
-            <input class="field" id="personName" name="name" placeholder="Name" aria-label="New person's name" maxlength="80">
-            <input class="field" id="personRole" name="role" placeholder="Role" aria-label="New person's role" maxlength="80">
-            <button type="submit" class="btn btn--secondary btn--sm">Add</button>
-          </form>
-          <p class="panel-tip">Drag a person onto a deliverable, or click to pick them up.</p>
-          <details class="team-help">
-            <summary>How to split someone's time</summary>
-            <p>Click a share's number to change its percentage. Use the pencil beside a person to edit their full split, load, or leave. Drop a share back onto the team to remove it.</p>
-          </details>
-        </aside>
-
-        <section class="board" id="deliverables" aria-labelledby="boardTitle">
-          <div class="board-head">
-            <h2 class="board-title" id="boardTitle">Deliverables</h2>
-            <button type="button" class="btn btn--primary btn--sm" id="addDelivBtn" data-action="add-deliverable">Add deliverable</button>
-          </div>
-          <div class="board-bar" id="boardBar"></div>
-          <div class="board-filter-note" id="boardFilterNote" role="status" hidden></div>
-          <div class="carry-bar" id="carryBar" role="status" hidden></div>
-          <div class="board-grid" id="board"></div>
-          <div class="table-wrap" id="boardTable" hidden></div>
-          <div class="map-wrap" id="boardMap" hidden></div>
-        </section>
-        </div>
-
-
-      </div>
     </div>
   </main>
 

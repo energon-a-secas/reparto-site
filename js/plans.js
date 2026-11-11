@@ -11,6 +11,7 @@
 import { state, ui, normalizeDoc, useHistory, dropHistory, newId } from './state.js'
 import { DEFAULT_SETTINGS } from './capacity.js'
 import { examplePlan, blankPlan } from './seed.js'
+import { prefsSettings } from './workspace.js'
 
 const STORE_KEY = 'reparto-v1-plans'
 const LEGACY_KEY = 'reparto-v1'
@@ -167,7 +168,19 @@ export function openPlan(raw, origin = '') {
 
 // A new plan counts quarters the way the open one does: the fiscal year is the company's, not the plan's.
 const fiscal = () => ({ fiscalStart: state.doc?.settings.fiscalStart })
-export const newBlankPlan = () => openPlan(blankPlan(fiscal()), 'blank')
+// The visitor's Neorgon settings (work days, week start), set by workspace-ui.js; none under Node.
+let visitorPrefs = () => ({})
+/** Where new plans read the visitor's settings from: a function returning neo_me's values. */
+export const usePrefs = fn => { if (typeof fn === 'function') visitorPrefs = fn }
+const withPrefs = plan => {
+  let prefs = {}
+  try { prefs = visitorPrefs() || {} } catch { /* unreadable settings: the defaults */ }
+  return { ...plan, settings: { ...plan.settings, ...prefsSettings(prefs, { fiscalStart: plan.settings.fiscalStart }) } }
+}
+/** A blank plan on the visitor's work days, starting on their week start. */
+export const newBlankPlan = () => openPlan(withPrefs(blankPlan(fiscal())), 'blank')
+/** A plan built from the workspace (workspace.js planFromWorkspace), opened beside the others. */
+export const openTeamPlan = raw => openPlan(raw, 'workspace')
 export const openExample = () => openPlan(examplePlan(fiscal()), 'example')
 /** A copy under a title no other plan has ("Copy of Q4", "Copy 2 of Q4"), so it is always a new plan. */
 export function duplicatePlan() {

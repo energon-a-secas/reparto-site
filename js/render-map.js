@@ -161,7 +161,7 @@ export function renderMap(a) {
 
   // Filtered to someone on no deliverable, the map still shows their row: planning their time off is what it is for.
   $('boardMap').innerHTML = `
-    ${table('people', 'People', `${icon('users', { size: 14 })}Each bar is a person's schedule: a vacation, a holiday or a team day off replaces the bar on its days, and each sprint shows the points they have there (booked of available when those differ). Drag across a row to add a vacation.`, personRows, '<p class="map-empty">Nobody yet.</p>')}
+    ${table('people', 'People', `${icon('users', { size: 14 })}Each bar is a person's schedule: a vacation, a holiday or a team day off replaces the bar on its days, and each sprint shows the points they have there (booked of available when those differ). Drag across a row to add a vacation.`, personRows, '<p class="map-empty">Nobody yet. Add people under Team, then drag them onto deliverables.</p>')}
     ${table('deliverables', 'Deliverables', `${icon('target', { size: 14 })}A bar runs over the deliverable's sprints and fills as far as it is staffed; the diamond is where it lands. Drag a bar to move it, an end to resize it.`, delivRows, ui.personFilter ? `<div class="map-empty">${filterEmpty()}</div>` : '<p class="map-empty">No deliverables yet.</p>')}
     <p class="map-legend"><span class="map-key map-key--work"></span>Working, sprint full <span class="map-key map-key--some"></span>Room left <span class="map-key map-key--over"></span>Over-booked <span class="map-key map-key--vac"></span>Vacation <span class="map-key map-key--holiday"></span>Public holiday <span class="map-key map-key--team"></span>Team day off <span class="map-key map-key--after"></span>Not in this plan ${icon('diamond', { size: 12 })} Lands</p>`
 }

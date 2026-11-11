@@ -61,6 +61,9 @@ const safeId = v => str(String(v ?? ''), 40).replace(/[^A-Za-z0-9_-]/g, '-')
 const dedupe = (list, key) => { const seen = new Set(); return list.filter(x => !seen.has(key(x)) && seen.add(key(x))) }
 const date = v => (parseISO(v) ? v : '')
 const code = v => (typeof v === 'string' && /^[A-Z]{2}$/.test(v) ? v : '')
+/** A Neorgon Workspace id (the kit's slug rule) and a #rrggbb colour, for people a plan took from the workspace. */
+const wsId = v => typeof v === 'string' && /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(v)
+const hex = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)
 
 /**
  * A deliverable's sprints: { from, to }, 1-based and inclusive, or null for
@@ -143,6 +146,9 @@ export function normalizeDoc(raw) {
       open: !!p.open,
       country: code(p.country),
       vacations: periods(p.vacations),
+      // The workspace person this one came from, and their colour: only when valid, so plans without them are unchanged.
+      ...(wsId(p.ws) ? { ws: p.ws } : {}),
+      ...(hex(p.color) ? { color: p.color.toLowerCase() } : {}),
     })
   }
   // A deliverable, in the plan or its backlog. Members must name a person; unknown ids are dropped.
