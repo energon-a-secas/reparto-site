@@ -15,6 +15,7 @@ make test      # node --test: arithmetic, calendar, flags, exports, plans, revie
 make holidays  # regenerate data/holidays/ (needs npm; installs outside the repo)
 make icons     # regenerate js/icon-data.js from lucide-static (same)
 node test/workspace-browser.mjs   # the Workspace in Chromium, Firefox, WebKit (fresh servers per engine on 9362, 9363; REPARTO_PORT, WS_FRAME_PORT; step 8 checks analytics as reparto.neorgon.com)
+node test/footer-focus-browser.mjs [chromium,firefox,webkit] [shotDir]   # every footer control's focus ring is the skin's teal at 1440 and 390, and ?theme= takes it back (servers on 9550, 9551)
 ```
 
 ## Architecture
@@ -120,6 +121,7 @@ Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,f
 - **The toast steps aside.** It takes no clicks, so it hides on any press, key, wheel, or a pointer within 8px of it (utils.js), rather than covering a control for 2.6 s.
 - **Faces come from the kit** (`faceOf`): the colour is the workspace person's own or one from their workspace id (`reparto-<id>` for someone Reparto made), on a solid disc with the kit's ink. `colorFor` and `inkOn` only return `#rrggbb`, which is why the inline style is safe.
 - **One banner above the work.** On the first-visit example the team offer is a button in the tip (`#firstRunTeam`), not the kit's banner as a second row; the banner (`#wsOffer`) shows only on an empty plan. Reparto's own text is 12px at the least, chips and Map labels included; the browser check measures Cards, Table and Map on the example. The kit's member faces in the sheet and the Footer Kit line are smaller and belong to those kits.
+- **The custom header skin is declared on the Footer Kit's pieces too** (`.neo-footer`, `.neo-top`, `.neo-beacon-link`, `.neo-modal` in style.css). The skin's tokens live on `.header-bar` and the kits resolve `--footer-*` and `--beacon-*` from `--header-*` once on `:root`, so without the second block every footer focus ring was the kit's magenta. Tokens only, scoped `html:not([data-theme])` so a visitor's theme still wins.
 - **The plan's configuration sits below the board.** Capacity settings and the calendar moved under the work (Jump to: Rules); a blank plan still opens the calendar and focuses Name.
 
 ## Do not touch
