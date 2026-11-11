@@ -20,6 +20,7 @@ const cal = { holidays: (c, y) => ({ CL, MX })[c]?.years[y] || null, status: () 
 function example(edit) {
   const raw = examplePlan()
   raw.settings.startDate = '2026-10-05'            // fixed dates: the example follows the calendar otherwise
+  raw.people[0].vacations = [{ from: '2026-10-19', to: '2026-10-23' }]   // Ana's third week, pinned with the start
   edit?.(raw)
   const doc = normalizeDoc(raw)
   const a = analyze(doc, cal)

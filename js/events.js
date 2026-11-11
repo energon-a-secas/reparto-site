@@ -25,6 +25,7 @@ import { openExport, bindExportDialog } from './export-dialog.js'
 import { icon } from './icons.js'
 import { bindTooltips, hideTooltip } from './tooltip.js'
 import { $, showToast, escHtml, plural } from './utils.js'
+import { useTeam } from './workspace-ui.js'
 
 export function bindEvents() {
   // Static icons: <span data-icon="name"> in the page shell becomes the SVG.
@@ -139,9 +140,11 @@ function runAction(action, el = null) {
     }
     case 'blank':
       newBlankPlan()
-      opened('New plan. Pick the team\'s countries, then add people and deliverables')
-      $('cal').open = true            // a blank plan's first question is whose holidays count
-      $('personName').focus()
+      opened('New plan. Add people, then deliverables. Holidays follow the countries under Rules')
+      $('cal').open = true            // whose holidays count is ready when they get there
+      // Centred, so the toast at the bottom never sits over the add-person row on a phone.
+      $('personName').focus({ preventScroll: true })
+      $('personName').scrollIntoView({ block: 'center' })
       break
     case 'duplicate': {
       const r = duplicatePlan()
@@ -190,6 +193,7 @@ function runAction(action, el = null) {
       })
       break
     }
+    case 'ws-team': useTeam(); break
     case 'dismiss-intro': ui.firstRun = false; saveState(); renderAll(); break
     case 'previous': openPrevious(); break
     case 'restore-previous': {

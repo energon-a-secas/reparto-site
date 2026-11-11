@@ -601,4 +601,5 @@ html:not([data-theme]) .header-bar[data-header-skin="custom"] {
   --header-menu-bg: #062523;
   --header-menu-hover: rgba(94, 234, 212, .14);
   --header-edge-from: rgba(94, 234, 212, .2);
+  --header-focus: #2dd4bf;   /* the gear's ring matches the sheet's teal rings */
 }

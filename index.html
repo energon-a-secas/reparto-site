@@ -159,12 +159,14 @@
       <div class="first-run" id="firstRun" role="note" hidden>
         <div class="first-run-copy"><span data-icon="lightbulb"></span><p><strong>Explore an example plan.</strong> Try fixing a flag, or start fresh with your team.</p></div>
         <div class="first-run-actions">
+          <button type="button" class="btn btn--primary btn--sm" data-action="ws-team" id="firstRunTeam" hidden>New plan from my team</button>
           <button type="button" class="btn btn--primary btn--sm" data-action="blank">Start my own plan</button>
           <button type="button" class="btn btn--ghost btn--sm" data-action="dismiss-intro">Got it</button>
         </div>
       </div>
 
-      <!-- The Workspace kit's team offer (ws.banner), shown while the plan has nobody yet or is the example. -->
+      <!-- The Workspace kit's team offer (ws.banner), shown while the plan has nobody yet. On the
+           example the tip above carries the same offer as one button, so the work is not pushed down by two banners. -->
       <div class="ws-offer" id="wsOffer" hidden><div id="wsBanner" hidden></div></div>
 
       <section class="tiles" id="tiles" aria-label="Plan totals"></section>

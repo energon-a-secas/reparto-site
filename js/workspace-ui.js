@@ -97,6 +97,19 @@ export function mountWorkspace() {
   ws.mountGear({ keepMobile: true })   // Settings stays one tap away on a phone
   const banner = document.getElementById('wsBanner')
   if (banner) ws.banner(banner)
+  // The example's tip offers the team too, as one button instead of a second banner.
+  const tip = document.getElementById('firstRunTeam')
+  if (tip) {
+    const draw = () => { const t = ws.team(); tip.hidden = !(t.ws && t.ws.people.length) }
+    draw()
+    ws.on('team', draw)
+  }
+}
+
+/** The tip's "New plan from my team": the same as the sheet's use action. */
+export function useTeam() {
+  const t = ws ? ws.team() : null
+  return t && t.ws ? planFromTeam(t.ws) : null
 }
 
 export const workspace = () => ws

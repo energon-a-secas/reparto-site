@@ -4,6 +4,8 @@
  * servers, which it starts itself:
  *   reparto-site on REPARTO_PORT (9362), the tool;
  *   neorgon-site on WS_FRAME_PORT (9363), the frame and the Workspace page.
+ * Each engine gets fresh servers, started and probed before it runs: after two
+ * engines, WebKit sometimes could not connect to a server they had used.
  *
  *   node projects/reparto-site/test/workspace-browser.mjs [chromium,firefox,webkit]
  *
@@ -23,11 +25,23 @@ const W = await import('../js/neorgon-workspace-core.js')
 
 const TOOL_PORT = Number(process.env.REPARTO_PORT || 9362)
 const FRAME_PORT = Number(process.env.WS_FRAME_PORT || 9363)
-const servers = [[TOOL_PORT, 'projects/reparto-site'], [FRAME_PORT, 'projects/neorgon-site']]
-  .map(([port, dir]) => spawn('python3', [join(ROOT, 'scripts/serve.py'), String(port), join(ROOT, dir)], { stdio: 'ignore' }))
-const stop = () => servers.forEach(s => s.kill())
+let servers = []
+const stop = () => { servers.forEach(s => s.kill()); servers = [] }
 process.on('exit', stop)
-await new Promise(r => setTimeout(r, 800))
+async function up(port) {
+  for (let i = 0; i < 40; i++) {
+    try { if ((await fetch(`http://localhost:${port}/`)).ok) return } catch { /* not listening yet */ }
+    await new Promise(r => setTimeout(r, 150))
+  }
+  throw new Error(`the server on ${port} never answered`)
+}
+async function start() {
+  stop()
+  await new Promise(r => setTimeout(r, 300))   // the ports are free again
+  servers = [[TOOL_PORT, 'projects/reparto-site'], [FRAME_PORT, 'projects/neorgon-site']]
+    .map(([port, dir]) => spawn('python3', [join(ROOT, 'scripts/serve.py'), String(port), join(ROOT, dir)], { stdio: 'ignore' }))
+  await Promise.all([up(TOOL_PORT), up(FRAME_PORT)])
+}
 
 const TOOL = `http://localhost:${TOOL_PORT}/`
 const FRAME = `http://localhost:${FRAME_PORT}`
@@ -69,8 +83,8 @@ async function launch(eng) {
 async function go(page, url) {
   for (let i = 0; ; i++) {
     try { return await page.goto(url) } catch (err) {
-      if (i >= 3 || !/connect|CONNECTION_REFUSED|NS_ERROR_NET|reset/i.test(String(err))) throw err
-      await page.waitForTimeout(400)
+      if (i >= 5 || !/connect|CONNECTION_REFUSED|NS_ERROR_NET|reset/i.test(String(err))) throw err
+      await page.waitForTimeout(500)
     }
   }
 }
@@ -94,6 +108,7 @@ async function waitTeam(page, ms = 7000) {
 const doc = page => page.evaluate(() => JSON.parse(localStorage.getItem('reparto-v1')).doc)
 
 for (const eng of engines) {
+  await start()
   const browser = await launch(eng)
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const requests = []
@@ -118,6 +133,9 @@ for (const eng of engines) {
   // 2. The team arrives through the frame (or the cache) and Reparto's section offers its teams, yours first.
   const t = await waitTeam(page)
   check(eng, 'the workspace team is read', !!(t && t.people === 3), JSON.stringify(t))
+  // The first-visit example carries the offer in its tip: one banner above the work, not two.
+  const tip = await page.evaluate(() => ({ team: !document.getElementById('firstRunTeam').hidden, tip: !document.getElementById('firstRun').hidden, offer: !document.getElementById('wsOffer').hidden }))
+  check(eng, 'the example offers the team inside its tip, with no second banner', tip.team && tip.tip && !tip.offer, JSON.stringify(tip))
   await page.click('.neo-ws-gear')
   await page.waitForSelector('#wsTeamPick')
   const pick = await page.evaluate(() => ({ value: document.getElementById('wsTeamPick').value, labels: [...document.querySelectorAll('#wsTeamPick option')].map(o => o.textContent), h: document.getElementById('wsTeamPick').offsetHeight }))
@@ -157,7 +175,8 @@ for (const eng of engines) {
   // 6. The pick round trip through the real page: the answer is read, cached and stripped; no request carries it.
   await go(page, `${TOOL}#keep-me`)
   await page.waitForSelector('.neo-ws-gear')
-  await page.evaluate(async () => (await import('/js/workspace-ui.js')).workspace().load())
+  // load() navigates away, so the evaluate may lose its context: that is the step working.
+  await page.evaluate(async () => (await import('/js/workspace-ui.js')).workspace().load()).catch(() => {})
   await page.waitForURL(/#pick/, { timeout: 5000 })
   await page.getByRole('button', { name: /Share with Reparto/ }).click()
   await page.waitForURL(u => u.toString().startsWith(TOOL), { timeout: 5000 })
@@ -167,10 +186,13 @@ for (const eng of engines) {
   check(eng, 'a pick comes back, stripped, with the tool fragment restored', after === '#keep-me' || after === '', after)
   check(eng, 'no request carries the team', !requests.some(u => u.includes('neo-ws=') && !u.startsWith(FRAME)), requests.filter(u => u.includes('neo-ws=')).join(' '))
 
-  // 7. Nothing under 12px for reading text, at phone width too.
-  for (const width of [1440, 390]) {
+  // 7. Nothing under 12px for reading text, on the example (chips, table rows, map bars), at phone width too.
+  await page.evaluate(() => document.querySelector('#plansMenu [data-action="example"]').click())
+  await page.waitForSelector('.priority-tag')
+  for (const [width, view] of [1440, 390].flatMap(w => ['cards', 'table', 'map'].map(k => [w, k]))) {
     await page.setViewportSize({ width, height: 900 })
-    await page.waitForTimeout(150)
+    await page.evaluate(k => document.querySelector(`[data-action="view"][data-view="${k}"]`)?.click(), view)
+    await page.waitForTimeout(200)
     const small = await page.evaluate(() => {
       const out = []
       for (const el of document.querySelectorAll('main *, .modal *, .pop *')) {
@@ -181,7 +203,9 @@ for (const eng of engines) {
       }
       return out.slice(0, 8)
     })
-    check(eng, `nothing under 12px at ${width}`, small.length === 0, small.join(' '))
+    const shown = await page.evaluate(k => ({ pressed: document.querySelector(`[data-action="view"][data-view="${k}"]`)?.getAttribute('aria-pressed'), tags: document.querySelectorAll('.priority-tag').length, bars: document.querySelectorAll('.map-bar').length }), view)
+    const measured = shown.pressed === 'true' && (view === 'map' ? shown.bars > 0 : shown.tags > 0)
+    check(eng, `nothing under 12px in ${view} at ${width}`, measured && small.length === 0, measured ? small.join(' ') : JSON.stringify(shown))
   }
   check(eng, 'no page errors', errors.length === 0, errors.join(' | '))
   await browser.close()

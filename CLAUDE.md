@@ -14,7 +14,7 @@ make serve     # http://localhost:8893 (ES modules: file:// will not load them)
 make test      # node --test: arithmetic, calendar, flags, exports, plans, review, and three breaker rounds
 make holidays  # regenerate data/holidays/ (needs npm; installs outside the repo)
 make icons     # regenerate js/icon-data.js from lucide-static (same)
-node test/workspace-browser.mjs   # the Workspace in Chromium, Firefox, WebKit (starts its own servers on 9362, 9363)
+node test/workspace-browser.mjs   # the Workspace in Chromium, Firefox, WebKit (fresh servers per engine on 9362, 9363; REPARTO_PORT, WS_FRAME_PORT)
 ```
 
 ## Architecture
@@ -43,7 +43,7 @@ The model is pure and Node-tested; the view is ES modules over one `state.doc`.
 | `js/events.js`, `js/io.js`, `js/modal.js`, `js/seed.js`, `js/utils.js` | wiring, share link / Markdown report / JSON, dialogs, the example plan, helpers |
 | `js/report.js` | the Markdown report, pure (as-of date, formula steps, named holidays, per-sprint points, the On column) |
 | `js/workspace.js` | pure: the Neorgon Workspace adapter. `planFromWorkspace` (a team, or everyone, as a new plan: country, load times team share, work days and week start from `neo_me`), `workspacePayload` (the plan's people back: name, role as title, country; open roles left out), `prefsSettings`, `teamChoices`, `faceOf` (the kit's colour and initials). Tested in `test/workspace.test.mjs` |
-| `js/workspace-ui.js` | the kit's client: `initWorkspace` (actions "New plan from my team" and "Save this plan's people", Reparto's section of the Settings sheet, `usePrefs` for blank plans), `mountWorkspace` (the header gear, the `,` key, the team offer `#wsBanner`) |
+| `js/workspace-ui.js` | the kit's client: `initWorkspace` (actions "New plan from my team" and "Save this plan's people", Reparto's section of the Settings sheet, `usePrefs` for blank plans), `mountWorkspace` (the header gear, the `,` key, the team offer: the kit's `#wsBanner` on an empty plan, `#firstRunTeam` in the example's tip), `useTeam` |
 | `js/tables.js`, `js/formats.js`, `js/xlsx.js`, `js/export-dialog.js` | the plan as `{ name, columns, rows }` tables; CSV / TSV / Markdown; a library-free .xlsx (SpreadsheetML in a stored zip); the Export dialog. Pure except the dialog, tested in `test/tables.test.mjs` |
 
 Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,footer,beacon,persist}.js`, `js/neorgon-workspace*.js` (`sync-workspace.sh`), `css/neorgon-*.css`.
@@ -116,6 +116,7 @@ Vendored from `packages/neorgon-ui/`, never edit in place: `js/neorgon-{header,f
 - **Work days are a count here.** Reparto's weeks work their first `daysPerWeek` weekdays (Monday on), so `neo_me`'s `d` gives only how many: `'71234'` plans as five days, Monday to Friday. The week start is exact: a new plan starts on next quarter's first day that is the visitor's week start, and the calendar already counts weeks from any start. The example and the quarter picker stay on Mondays.
 - **New plans take the device's defaults too.** `ws.prefs()` fills every key from the locale, so an en-US visitor with no `neo_me` gets Sunday starts on a blank plan. That is the plan's contract (`withDefaults`), not a bug.
 - **Faces come from the kit** (`faceOf`): the colour is the workspace person's own or one from their workspace id (`reparto-<id>` for someone Reparto made), on a solid disc with the kit's ink. `colorFor` and `inkOn` only return `#rrggbb`, which is why the inline style is safe.
+- **One banner above the work.** On the first-visit example the team offer is a button in the tip (`#firstRunTeam`), not the kit's banner as a second row; the banner (`#wsOffer`) shows only on an empty plan. Reparto's own text is 12px at the least, chips and Map labels included; the browser check measures Cards, Table and Map on the example. The kit's member faces in the sheet and the Footer Kit line are smaller and belong to those kits.
 - **The plan's configuration sits below the board.** Capacity settings and the calendar moved under the work (Jump to: Rules); a blank plan still opens the calendar and focuses Name.
 
 ## Do not touch

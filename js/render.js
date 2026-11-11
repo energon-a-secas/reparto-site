@@ -46,8 +46,9 @@ const ORIGIN = { link: 'from a link', import: 'imported', example: 'the example'
 
 function renderChrome() {
   $('firstRun').hidden = !ui.firstRun
-  // The workspace's team is offered where it helps: an empty plan, or the example on a first visit.
-  $('wsOffer').hidden = !(ui.firstRun || !state.doc.people.length)
+  // The workspace's team is offered where it helps: the kit's banner on an empty plan, and a
+  // button in the tip on the first-visit example (workspace-ui.js shows it when there is a team).
+  $('wsOffer').hidden = !!state.doc.people.length
   $('previousItem').hidden = !previousPlans().length
   // The plan switcher: every plan in this browser, the open one checked.
   const plans = listPlans()
