@@ -19,7 +19,25 @@ export function escHtml(str) {
 }
 
 let _toastTimer = null
+// A toast never stands over a control the visitor reaches for: it goes as soon
+// as they press anything, scroll, type, or move the pointer onto it (it takes
+// no clicks, so without this it hid what lay under it for its 2.6 s).
+const hideToast = () => document.getElementById('app-toast')?.classList.remove('visible')
+let _toastBound = false
+function bindToastDismiss() {
+  if (_toastBound) return
+  _toastBound = true
+  const opts = { capture: true, passive: true }
+  for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(type, hideToast, opts)
+  window.addEventListener('pointermove', e => {
+    const el = document.getElementById('app-toast')
+    if (!el || !el.classList.contains('visible')) return
+    const r = el.getBoundingClientRect()
+    if (e.clientX >= r.left - 8 && e.clientX <= r.right + 8 && e.clientY >= r.top - 8 && e.clientY <= r.bottom + 8) hideToast()
+  }, opts)
+}
 export function showToast(msg) {
+  bindToastDismiss()
   let el = document.getElementById('app-toast')
   if (!el) {
     el = document.createElement('div')

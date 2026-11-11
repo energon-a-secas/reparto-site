@@ -4,15 +4,18 @@
 //   use   "New plan from my team": the chosen team (yours by default) as a
 //         plan of its own, people with their country and load
 //   save  "Save this plan's people to your workspace": names, roles, countries
-// New blank plans read work days and week start from the visitor's settings
-// (plans.js usePrefs). Call initWorkspace() before the plan reads its hash:
-// a pick's answer arrives in the fragment and the client strips it.
+// New plans read work days and week start from the settings the visitor set
+// (ownPrefs below, plans.js usePrefs): only those, never the device defaults
+// the client's prefs() fills in, so with no settings a plan is as before.
+// Call initWorkspace() before the plan reads its hash: a pick's answer
+// arrives in the fragment and the client strips it.
 //
 // The sheet and the banner build their DOM with textContent; the section
 // below does the same. Workspace values reach a plan only through
 // planFromWorkspace (normalizeWorkspace) and openPlan (normalizeDoc).
 
 import { NeoWorkspace } from './neorgon-workspace.js'
+import { readMe } from './neorgon-workspace-core.js'
 import { state } from './state.js'
 import { openTeamPlan, usePrefs } from './plans.js'
 import { TOOL, EVERYONE, teamChoices, planFromWorkspace, workspacePayload } from './workspace.js'
@@ -21,6 +24,9 @@ import { plural } from './utils.js'
 let ws = null
 let chosen = null       // the team the visitor picked in the section, or null for the preferred one
 let onOpened = () => {}
+
+/** The visitor's own settings, as stored in neo_me: nothing the device locale guessed. */
+const ownPrefs = () => { try { return readMe(document.cookie) || {} } catch { return {} } }
 
 const el = (tag, props = {}, ...kids) => {
   const n = document.createElement(tag)
@@ -40,7 +46,7 @@ function teamFor(workspace) {
 
 /** Open a new plan from the workspace. Returns the result of openPlan, or null when the team has nobody. */
 export function planFromTeam(workspace, teamId = teamFor(workspace)) {
-  const raw = planFromWorkspace(workspace, teamId, { prefs: ws ? ws.prefs() : {}, fiscalStart: state.doc?.settings.fiscalStart })
+  const raw = planFromWorkspace(workspace, teamId, { prefs: ownPrefs(), fiscalStart: state.doc?.settings.fiscalStart })
   if (!raw) return null
   const r = openTeamPlan(raw)
   onOpened(r, raw)
@@ -62,8 +68,23 @@ function renderSection(box) {
   } else {
     parts.push(el('p', { class: 'neo-ws-note', text: 'Load your team above, or add people on your workspace page, to start a plan from them.' }))
   }
-  parts.push(el('p', { class: 'neo-ws-hint', text: 'New plans take your work days and week start from You. Each person keeps their country for public holidays, and their load on the team becomes their capacity.' }))
+  parts.push(el('p', { class: 'neo-ws-hint', text: 'New plans take the work days and week start you set under You. Each person keeps their country for public holidays, and their load on the team becomes their capacity.' }))
   box.replaceChildren(...parts)
+}
+
+/**
+ * index.html moves a pick's answer (#neo-ws=...) out of the address before the
+ * Header Kit's analytics can read it. Put it back for the one synchronous
+ * moment the client needs: NeoWorkspace.init reads it, checks it against this
+ * tab's pick marker and strips it again before any other script runs.
+ */
+function holdBackAnswer() {
+  const held = window.__neoWsAnswer
+  try { delete window.__neoWsAnswer } catch { window.__neoWsAnswer = undefined }
+  if (typeof held !== 'string' || !/^#neo-ws=[^\s]*$/.test(held) || held.length > 410000) return
+  try {
+    if (location.hash === '' || location.hash === '#') history.replaceState(history.state, '', location.pathname + location.search + held)
+  } catch { /* sandboxed: the answer is lost, the team still comes from the frame */ }
 }
 
 /**
@@ -73,6 +94,7 @@ function renderSection(box) {
  */
 export function initWorkspace({ opened } = {}) {
   if (typeof opened === 'function') onOpened = opened
+  holdBackAnswer()
   try {
     ws = NeoWorkspace.init({
       tool: TOOL,
@@ -87,7 +109,7 @@ export function initWorkspace({ opened } = {}) {
     console.error('[Reparto] workspace', err)
     return null
   }
-  usePrefs(() => ws.prefs())
+  usePrefs(ownPrefs)
   return ws
 }
 

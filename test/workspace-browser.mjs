@@ -51,16 +51,20 @@ const results = []
 const check = (eng, name, ok, extra = '') => { results.push({ eng, name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${eng}: ${name}${extra && !ok ? ' ' + extra : ''}`) }
 
 // A workspace with a hostile team name and person name: both must arrive as text.
+// Ana's title is past 80 characters and Ben has no country, so a plan made from
+// the team and saved straight back shows whether Reparto cut or guessed anything.
+const LONG_TITLE = 'Backend engineer for payments, ledgers, reconciliation and the settlement batch jobs across Chile and Mexico'
 const WS = W.normalizeWorkspace({
   v: 1,
   me: { person: 'ana-rojas' },
   people: [
-    { id: 'ana-rojas', name: 'Ana Rojas', title: 'Backend', country: 'CL', load: 80 },
+    { id: 'ana-rojas', name: 'Ana Rojas', title: LONG_TITLE, country: 'CL', load: 80 },
     { id: 'bruno-silva', name: '<img src=x onerror="window.__pwned=1">', country: 'MX', color: '#be185d' },
+    { id: 'ben-ortiz', name: 'Ben Ortiz' },
     { id: 'zoe', name: 'Zoe Park', country: 'US' },
   ],
   teams: [
-    { id: 'payments', name: 'Payments <b>x</b>', members: [{ person: 'ana-rojas' }, { person: 'bruno-silva', pct: 50 }] },
+    { id: 'payments', name: 'Payments <b>x</b>', members: [{ person: 'ana-rojas' }, { person: 'bruno-silva', pct: 50 }, { person: 'ben-ortiz' }] },
     { id: 'growth', name: 'Growth', members: [{ person: 'zoe' }] },
   ],
 }).ws
@@ -107,10 +111,71 @@ async function waitTeam(page, ms = 7000) {
 }
 const doc = page => page.evaluate(() => JSON.parse(localStorage.getItem('reparto-v1')).doc)
 
+/**
+ * 8. No analytics beacon carries the team (the plan's privacy amendment). The
+ * Header Kit starts analytics only on *.neorgon.com, so on localhost step 6
+ * could never see one. Here the tool is served as reparto.neorgon.com (every
+ * request answered from the local server, nothing leaves the machine), the
+ * analytics scripts are answered with empty stand-ins, and the page records
+ * the address each one would read when it runs: an answer still in the
+ * fragment then would reach a beacon that sends the full URL. The check also
+ * fails if no analytics script was requested, so it cannot pass by default.
+ */
+const HOST = 'http://reparto.neorgon.com'
+const ANALYTICS = /gc\.zgo\.at|goatcounter\.com|cloudflareinsights\.com/
+async function analytics(browser, eng) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const outside = []
+  // One fetch at a time, retried: serve.py resets connections when a page asks for twenty files at once.
+  let queue = Promise.resolve()
+  const local = path => (queue = queue.catch(() => {}).then(async () => {
+    for (let i = 0; ; i++) {
+      try { const r = await ctx.request.get(`http://127.0.0.1:${TOOL_PORT}${path}`); return { status: r.status(), headers: r.headers(), body: await r.body() } } catch (err) {
+        if (i >= 5) throw err
+        await new Promise(res => setTimeout(res, 200))
+      }
+    }
+  }))
+  await ctx.route('**/*', async route => {
+    const u = new URL(route.request().url())
+    if (u.origin === HOST) return route.fulfill(await local(u.pathname + u.search))
+    if (u.hostname === 'localhost') return route.continue()
+    outside.push(u.href)
+    return route.fulfill({ status: 200, contentType: /\.js$/.test(u.pathname) ? 'text/javascript' : 'text/html', body: '' })
+  })
+  await ctx.addInitScript(([re]) => {
+    const seen = window.__analyticsSaw = []
+    const pattern = new RegExp(re)
+    new MutationObserver(list => {
+      for (const m of list) for (const n of m.addedNodes) {
+        if (n.tagName !== 'SCRIPT' || !pattern.test(n.src || '')) continue
+        const at = () => seen.push({ src: n.src, href: location.href })
+        n.addEventListener('load', at); n.addEventListener('error', at)
+      }
+    }).observe(document, { childList: true, subtree: true })
+  }, [ANALYTICS.source])
+  const page = await ctx.newPage()
+  const stamp = W.makeStamp()
+  await go(page, `${HOST}/?v=${++v}#neo-ws=${await W.encodePayload(WS, { compress: false })}&stamp=${stamp}`)
+  await page.waitForSelector('.neo-ws-gear')
+  await page.waitForTimeout(1500)
+  const saw = await page.evaluate(() => window.__analyticsSaw)
+  const requested = outside.filter(u => ANALYTICS.test(u))
+  check(eng, 'analytics start on the neorgon.com host (the next check measures something)', requested.length > 0, JSON.stringify(outside))
+  check(eng, 'no analytics request carries the team', !outside.some(u => u.includes('neo-ws=')), outside.filter(u => u.includes('neo-ws=')).join(' '))
+  check(eng, 'no analytics script runs while the answer is in the address', saw.length > 0 && !saw.some(x => x.href.includes('neo-ws=')), JSON.stringify(saw))
+  // Held back from the address, the answer still reaches the client, which refuses it: this tab never asked.
+  const late = await page.evaluate(async () => ({ hash: location.hash, issues: (await import('/js/workspace-ui.js')).workspace().team().issues.map(i => i.msg) }))
+  check(eng, 'the held-back answer still reaches the client (and an unasked one is refused)', late.hash === '' && late.issues.some(m => /did not ask/.test(m)), JSON.stringify(late))
+  await ctx.close()
+}
+
 for (const eng of engines) {
   await start()
   const browser = await launch(eng)
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  // en-IN: CLDR gives India a Sunday-only weekend and a Sunday week start, so a
+  // plan that read the device's defaults would show six-day weeks from Sunday.
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'en-IN' })
   const requests = []
   ctx.on('request', r => requests.push(r.url()))
   await ctx.addInitScript(([dev]) => { try { if (location.port !== dev.split(':').pop()) localStorage.setItem('neo-ws:dev-origin', dev) } catch { /* none */ } }, [FRAME])
@@ -132,7 +197,7 @@ for (const eng of engines) {
 
   // 2. The team arrives through the frame (or the cache) and Reparto's section offers its teams, yours first.
   const t = await waitTeam(page)
-  check(eng, 'the workspace team is read', !!(t && t.people === 3), JSON.stringify(t))
+  check(eng, 'the workspace team is read', !!(t && t.people === 4), JSON.stringify(t))
   // The first-visit example carries the offer in its tip: one banner above the work, not two.
   const tip = await page.evaluate(() => ({ team: !document.getElementById('firstRunTeam').hidden, tip: !document.getElementById('firstRun').hidden, offer: !document.getElementById('wsOffer').hidden }))
   check(eng, 'the example offers the team inside its tip, with no second banner', tip.team && tip.tip && !tip.offer, JSON.stringify(tip))
@@ -146,13 +211,25 @@ for (const eng of engines) {
   await page.getByRole('dialog').getByRole('button', { name: 'New plan from my team' }).click()
   await page.waitForTimeout(400)
   const d = await doc(page)
-  check(eng, 'New plan from my team opens the team as a plan', d.title === 'Payments <b>x</b>' && d.people.length === 2 && d.people[0].load === 80 && d.people[1].load === 50 && d.people[1].country === 'MX', JSON.stringify(d.people))
+  check(eng, 'New plan from my team opens the team as a plan', d.title === 'Payments <b>x</b>' && d.people.length === 3 && d.people[0].load === 80 && d.people[1].load === 50 && d.people[1].country === 'MX' && d.people[2].country === '', JSON.stringify(d.people))
+  check(eng, 'a title past 80 characters arrives whole', d.people[0].role === LONG_TITLE, String(d.people[0].role.length))
+  check(eng, 'no settings set: the team plan starts on a Monday, five days a week', d.settings.daysPerWeek === 5 && new Date(d.settings.startDate + 'T00:00:00Z').getUTCDay() === 1, JSON.stringify(d.settings))
+  // The toast says so, then steps aside for the controls under it as soon as the pointer comes near.
+  const box = await page.locator('#app-toast.visible').boundingBox().catch(() => null)
+  if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.waitForTimeout(250)
+  check(eng, 'the confirmation toast leaves when the pointer reaches it', !!box && await page.evaluate(() => !document.getElementById('app-toast').classList.contains('visible')), JSON.stringify(box))
   const faces = await page.evaluate(() => [...document.querySelectorAll('#rosterList .face')].map(f => getComputedStyle(f).backgroundColor))
   check(eng, 'the workspace colour reaches the face', faces.includes('rgb(190, 24, 93)'), JSON.stringify(faces))
   check(eng, 'hostile names stay text', await page.evaluate(() => !window.__pwned && !document.querySelector('main img[src="x"]') && document.getElementById('rosterList').textContent.includes('<img')))
   check(eng, 'the plan is listed as from your workspace', await page.evaluate(() => document.getElementById('planList').textContent.includes('from your workspace')))
 
-  // 4. A blank plan takes work days and week start from your settings.
+  // 4. With no settings, a blank plan is what it always was, whatever the device's locale.
+  await page.evaluate(() => document.querySelector('#plansMenu [data-action="blank"]').click())
+  await page.waitForTimeout(300)
+  const b0 = await doc(page)
+  check(eng, 'no settings: a blank plan works five days from a Monday (en-IN device)', b0.settings.daysPerWeek === 5 && new Date(b0.settings.startDate + 'T00:00:00Z').getUTCDay() === 1, JSON.stringify(b0.settings))
+  // A blank plan takes work days and week start from the settings you set.
   await page.evaluate(([c]) => { document.cookie = c }, [W.meCookie({ d: '1234', w: 7 }, { protocol: 'http:', hostname: 'localhost' })])
   await page.evaluate(() => document.querySelector('#plansMenu [data-action="blank"]').click())
   await page.waitForTimeout(300)
@@ -162,7 +239,7 @@ for (const eng of engines) {
   check(eng, 'an empty plan offers your team', offer)
 
   // 5. Save: to the Workspace page's review, with the plan's people, tool and return.
-  await page.evaluate(() => document.querySelector('#plansMenu [data-action="switch-plan"]:not([aria-checked="true"])')?.click())
+  await page.evaluate(() => [...document.querySelectorAll('#plansMenu [data-action="switch-plan"]')].find(b => b.textContent.includes('from your workspace'))?.click())
   await page.waitForTimeout(200)
   await page.click('.neo-ws-gear')
   await page.getByRole('dialog').getByRole('button', { name: /Save this plan's people/ }).click()
@@ -171,6 +248,7 @@ for (const eng of engines) {
   check(eng, 'save goes to the Workspace review', !!(saved && saved.op === 'save' && saved.tool === 'reparto' && page.url().startsWith(FRAME + '/workspace/')), page.url().slice(0, 120))
   const back = W.previewPayload(WS, saved ? saved.payload : '')
   check(eng, 'the review adds nobody already there', !!(back && back.added.length === 0), JSON.stringify(back && back.added))
+  check(eng, 'the team saved straight back changes nobody (no cut title, no guessed country)', !!(back && back.updated.length === 0), JSON.stringify(back && back.updated))
 
   // 6. The pick round trip through the real page: the answer is read, cached and stripped; no request carries it.
   await go(page, `${TOOL}#keep-me`)
@@ -184,6 +262,8 @@ for (const eng of engines) {
   await page.waitForTimeout(300)
   const after = await page.evaluate(() => location.hash)
   check(eng, 'a pick comes back, stripped, with the tool fragment restored', after === '#keep-me' || after === '', after)
+  const issues = await page.evaluate(async () => (await import('/js/workspace-ui.js')).workspace().team().issues.map(i => i.msg))
+  check(eng, 'the answer held back from analytics still reaches the client', !issues.some(m => /did not ask|could not be read/.test(m)), JSON.stringify(issues))
   check(eng, 'no request carries the team', !requests.some(u => u.includes('neo-ws=') && !u.startsWith(FRAME)), requests.filter(u => u.includes('neo-ws=')).join(' '))
 
   // 7. Nothing under 12px for reading text, on the example (chips, table rows, map bars), at phone width too.
@@ -208,6 +288,7 @@ for (const eng of engines) {
     check(eng, `nothing under 12px in ${view} at ${width}`, measured && small.length === 0, measured ? small.join(' ') : JSON.stringify(shown))
   }
   check(eng, 'no page errors', errors.length === 0, errors.join(' | '))
+  await analytics(browser, eng)
   await browser.close()
 }
 

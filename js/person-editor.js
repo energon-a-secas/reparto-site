@@ -5,7 +5,7 @@
 // every keystroke from the same personCapacity() the roster uses, so it
 // cannot disagree with the row.
 
-import { state, snapshot, commitFrom, person, deliverable, updatePerson, removePerson, assign, setShare, unassign } from './state.js'
+import { state, PERSON_TEXT, snapshot, commitFrom, person, deliverable, updatePerson, removePerson, assign, setShare, unassign } from './state.js'
 import { analyze, personCapacity, capFromRaw, shareKey, plannedSprints, PCT_MIN, PCT_MAX } from './capacity.js'
 import { splitExact, windowCap, spanLabel } from './timeline.js'
 import { sprintList } from './flags.js'
@@ -138,8 +138,8 @@ function vacations() {
 function fields() {
   const f = $('personEdit')
   return {
-    name: f.elements.name.value.trim().slice(0, 80),
-    role: f.elements.role.value.trim().slice(0, 80),
+    name: f.elements.name.value.trim().slice(0, PERSON_TEXT),
+    role: f.elements.role.value.trim().slice(0, PERSON_TEXT),
     load: Number(f.elements.load.value),
     sprintsOff: Number(f.elements.sprintsOff.value),
     country: f.elements.country.value,

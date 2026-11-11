@@ -35,6 +35,7 @@ function opened(r, hadPlan) {
 function fromTeam(r, raw) {
   afterChange()
   showToast(r.existing ? `That plan was already here, so ${raw.title} is open now`
+    : raw.left > 0 ? `New plan from ${raw.title}: the first ${raw.people.length} people. A plan holds ${raw.people.length}, so ${plural(raw.left, 'person was', 'people were')} left out`
     : `New plan from ${raw.title}: ${plural(raw.people.length, 'person', 'people')}. Add deliverables next`)
   document.getElementById('addDelivBtn')?.focus({ preventScroll: true })
 }

@@ -4,7 +4,7 @@
 
 import {
   state, ui, snapshot, undo, redo, setSetting, deliverable, findDeliverable, person,
-  addPerson, addDeliverable, addBacklogItem, updateDeliverable, addDayOff, removeDayOff, setWorked, wipe,
+  addPerson, PERSON_TEXT, addDeliverable, addBacklogItem, updateDeliverable, addDayOff, removeDayOff, setWorked, wipe,
 } from './state.js'
 import {
   saveState, switchPlan, newBlankPlan, openExample, duplicatePlan, deletePlan, previousPlans, previousKey, keepPrevious, restorePrevious, listPlans, isBlankPlan,
@@ -415,7 +415,7 @@ function onAddPerson(e) {
   e.preventDefault()
   const name = $('personName').value.trim(), role = $('personRole').value.trim()
   if (!name) { $('personName').focus(); showToast('Give the person a name first'); return }
-  snapshot(); const added = addPerson({ name: name.slice(0, 80), role: role.slice(0, 80) }); afterChange()
+  snapshot(); const added = addPerson({ name: name.slice(0, PERSON_TEXT), role: role.slice(0, PERSON_TEXT) }); afterChange()
   $('personName').value = ''; $('personRole').value = ''
   $('personName').focus()
   const a = analyze(state.doc, cal)

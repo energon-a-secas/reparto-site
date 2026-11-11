@@ -56,7 +56,9 @@ test('work days and week start from your settings', () => {
   assert.deepEqual(prefsSettings({ d: '12345', w: 1 }, { today: TODAY }), { daysPerWeek: 5, startDate: '2027-01-04' })
   assert.deepEqual(prefsSettings({ d: '1234', w: 7 }, { today: TODAY }), { daysPerWeek: 4, startDate: '2027-01-03' }, 'a Sunday start')
   assert.deepEqual(prefsSettings({ d: '123456', w: 6 }, { today: TODAY }), { daysPerWeek: 6, startDate: '2027-01-02' }, 'a Saturday start')
-  assert.deepEqual(prefsSettings({ d: 'x', w: 3, cc: '<b>' }, { today: TODAY }), { startDate: '2027-01-04' }, 'garbage changes nothing')
+  assert.deepEqual(prefsSettings({ d: 'x', w: 3, cc: '<b>' }, { today: TODAY }), {}, 'garbage changes nothing')
+  assert.deepEqual(prefsSettings({}, { today: TODAY }), {}, 'no settings: a plan keeps its own work days and start')
+  assert.deepEqual(prefsSettings({ d: '12345' }, { today: TODAY }), { daysPerWeek: 5 }, 'work days alone leave the start alone')
   assert.deepEqual(prefsSettings({ w: 1 }, { fiscalStart: 1, today: TODAY }), { startDate: '2027-01-04' })
   const doc = normalizeDoc(planFromWorkspace(WS, 'payments', { prefs: { d: '1234', w: 7 }, today: TODAY }))
   assert.equal(doc.settings.daysPerWeek, 4)
@@ -81,7 +83,7 @@ test('hostile workspace values never reach the plan unchecked', () => {
   const doc = normalizeDoc(planFromWorkspace(evil, EVERYONE, { today: TODAY }))
   for (const p of doc.people) {
     assert.ok(p.load >= 0 && p.load <= 100)
-    assert.ok(p.name.length <= 80)
+    assert.ok(p.name.length <= 120)
     assert.equal(p.color, undefined)
     assert.equal(p.country, '')
     assert.match(p.id, /^[A-Za-z0-9_-]+$/)
@@ -118,12 +120,12 @@ test('saving back: names, roles as titles, countries; open roles left out; ids p
     deliverables: [],
   })
   assert.deepEqual(workspacePayload(doc), { people: [
-    { id: 'ana-rojas', name: 'Ana Rojas', title: 'Backend', country: 'CL' },
+    { id: 'ana-rojas', name: 'Ana Rojas', title: 'Backend' },
     { id: 'reparto-p-7', name: 'Nuevo Pérez', country: 'MX' },
   ] })
   assert.equal(workspacePayload({ people: [{ id: 'o', name: 'Open', open: true }] }), null)
   assert.equal(workspacePayload(null), null)
-  // With two countries, someone without their own is not guessed.
+  // Nobody without a country of their own is given one, whatever the plan follows.
   const two = normalizeDoc({ title: 'T', settings: { countries: ['CL', 'MX'] }, people: [{ id: 'x', name: 'X' }], deliverables: [] })
   assert.equal(workspacePayload(two).people[0].country, undefined)
 })
@@ -138,6 +140,44 @@ test('a round trip: plan from the workspace, save it back, nobody is added twice
   const second = previewMerge(first.next, workspacePayload(doc))
   assert.deepEqual(second.added, [])
   assert.equal(second.next.people.length, first.next.people.length)
+})
+
+test('a team saved straight back changes nobody: long names and titles whole, no guessed country', () => {
+  const name = 'Cleopatra Philopator Ptolemaios Euergetes Theodora Ramírez de Arellano y Fernández-Villaverde'
+  const title = 'Principal engineer, payments platform, ledgers, reconciliation, settlement batches and fraud signals'
+  const { ws } = normalizeWorkspace({
+    v: 1,
+    people: [
+      { id: 'cleo', name, title, country: 'CL' },
+      { id: 'ben-ortiz', name: 'Ben Ortiz', title: 'Backend' },
+      { id: 'ana', name: 'Ana', country: 'CL' },
+      { id: 'mx', name: 'Mo', country: 'MX' },
+      { id: 'solo', name: 'Solo' },
+    ],
+    teams: [
+      { id: 'core', name: 'Core', members: [{ person: 'cleo' }, { person: 'ben-ortiz' }, { person: 'ana' }] },
+      { id: 'pair', name: 'Pair', members: [{ person: 'ana' }, { person: 'mx' }, { person: 'solo' }] },
+      { id: 'none', name: 'None', members: [{ person: 'ben-ortiz' }, { person: 'solo' }] },
+    ],
+  })
+  assert.ok(name.length > 80 && title.length > 80)
+  for (const [team, prefs] of [['core', {}], ['pair', {}], ['none', { cc: 'CL' }], [EVERYONE, { cc: 'AR' }]]) {
+    const doc = normalizeDoc(planFromWorkspace(ws, team, { prefs, today: TODAY }))
+    const r = previewMerge(ws, workspacePayload(doc))
+    assert.deepEqual([r.added, r.updated], [[], []], `team ${team || 'everyone'}`)
+  }
+  const cleo = normalizeDoc(planFromWorkspace(ws, 'core', { today: TODAY })).people[0]
+  assert.deepEqual([cleo.name, cleo.role], [name, title])
+  // The plan still follows a country for holidays; only the person stays without one.
+  assert.deepEqual(normalizeDoc(planFromWorkspace(ws, 'none', { prefs: { cc: 'CL' }, today: TODAY })).settings.countries, ['CL'])
+})
+
+test('past 400 people, the plan says how many were left out', () => {
+  const people = Array.from({ length: 405 }, (_, i) => ({ id: `p${i}`, name: `Person ${i}` }))
+  const raw = planFromWorkspace({ v: 1, people, teams: [] }, EVERYONE, { today: TODAY })
+  assert.deepEqual([raw.people.length, raw.left], [400, 5])
+  assert.equal(planFromWorkspace(WS, 'payments', { today: TODAY }).left, 0)
+  assert.equal('left' in normalizeDoc(raw), false, 'the count is for the page, never stored in the plan')
 })
 
 test('a Reparto-only person matches a stored one by an unambiguous name', () => {

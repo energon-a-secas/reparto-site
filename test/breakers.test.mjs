@@ -158,10 +158,10 @@ test('EXP-6: ids are cleaned, so a colon cannot make two shares one key', () => 
   assert.equal(a.shares.size, 2)
 })
 
-test('EXP-7: the 80-character cut never leaves half an emoji', () => {
-  const doc = st.normalizeDoc({ settings: {}, people: [{ id: 'p', name: 'x'.repeat(79) + '😀' }], deliverables: [] })
+test('EXP-7: the name cut (120, the workspace\'s) never leaves half an emoji', () => {
+  const doc = st.normalizeDoc({ settings: {}, people: [{ id: 'p', name: 'x'.repeat(119) + '😀' }], deliverables: [] })
   assert.ok(!/[\ud800-\udbff]$/.test(doc.people[0].name))
-  assert.equal(doc.people[0].name.length, 79)
+  assert.equal(doc.people[0].name.length, 119)
 })
 
 test('splitPoints still sums exactly after the floor change', () => {

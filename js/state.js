@@ -16,6 +16,7 @@ import { normalizePlanning } from './planning.js'
 const UNDO_DEPTH = 40
 const MAX_LEAVE_DAYS = 3 * 366
 const MAX_ITEMS = 400          // people, and deliverables in the plan
+export const PERSON_TEXT = 120 // a person's name and role
 
 export const state = { doc: null, planId: null }   // set by plans.js loadSaved()
 
@@ -140,7 +141,8 @@ export function normalizeDoc(raw) {
     // Only an id the input carried can be named by a member: a person with no id is not "undefined".
     if (p.id != null && p.id !== '' && !idMap.has(String(p.id))) idMap.set(String(p.id), id)
     people.push({
-      id, name: str(p.name), role: str(p.role),
+      // 120, the workspace's own limit for a name and a title: at 80 a plan made from the team and saved straight back cut them.
+      id, name: str(p.name, PERSON_TEXT), role: str(p.role, PERSON_TEXT),
       load: num(p.load ?? 100, 0, 100, 100),
       sprintsOff: num(Math.round(p.sprintsOff || 0), 0, 13, 0),
       open: !!p.open,

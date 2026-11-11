@@ -35,6 +35,9 @@
   <!-- Neorgon Workspace Kit (vendored): the Settings sheet behind the header gear and the , key. -->
   <link rel="stylesheet" href="css/neorgon-workspace.css">
   <!-- Neorgon Header Kit (vendored; ?header=live swaps CSS to CDN). Keep after style.css, the kit owns the header. -->
+  <!-- A team coming back from the Workspace page (#neo-ws=...) leaves the address before the Header Kit
+       starts analytics, so no beacon reads it; js/workspace-ui.js hands it to the Workspace client. -->
+  <script>(function(){try{var h=location.hash;if(/^#neo-ws=/.test(h)){window.__neoWsAnswer=h;history.replaceState(history.state,'',location.pathname+location.search)}}catch(e){}})();</script>
   <script>(function(){var m=location.search.match(/[?&]theme=([\w-]+)/)||document.cookie.match(/(?:^|;\s*)neo_theme=([\w-]+)/);if(m&&m[1]!=='default')document.documentElement.dataset.theme=decodeURIComponent(m[1]);})();</script>
   <link rel="stylesheet" href="css/neorgon-header.css">
   <link rel="stylesheet" href="css/neorgon-themes.css">
@@ -182,8 +185,8 @@
           </div>
           <ul class="roster-list" id="rosterList"></ul>
           <form class="roster-add" id="personForm" autocomplete="off">
-            <input class="field" id="personName" name="name" placeholder="Name" aria-label="New person's name" maxlength="80">
-            <input class="field" id="personRole" name="role" placeholder="Role" aria-label="New person's role" maxlength="80">
+            <input class="field" id="personName" name="name" placeholder="Name" aria-label="New person's name" maxlength="120">
+            <input class="field" id="personRole" name="role" placeholder="Role" aria-label="New person's role" maxlength="120">
             <button type="submit" class="btn btn--secondary btn--sm">Add</button>
           </form>
           <p class="panel-tip">Drag a person onto a deliverable, or click to pick them up.</p>
@@ -311,8 +314,8 @@
         </button>
       </header>
       <form class="modal__body person-form" id="personEdit" autocomplete="off">
-        <label class="lbl">Name <input class="field" name="name" maxlength="80"></label>
-        <label class="lbl">Role <input class="field" name="role" maxlength="80"></label>
+        <label class="lbl">Name <input class="field" name="name" maxlength="120"></label>
+        <label class="lbl">Role <input class="field" name="role" maxlength="120"></label>
         <fieldset class="dist">
           <legend class="lbl">How their capacity is split</legend>
           <ul class="dist-list" id="distList"></ul>
