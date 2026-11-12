@@ -586,14 +586,12 @@ button:active,
 
 /* The header skin follows Reparto's teal instead of the fleet magenta. Tokens only,
    the selector exactly as the Header Kit README gives it, so ?theme= and seasons still win.
-   The Footer Kit's pieces (the footer, the back-to-top button, a disclaimer dialog) and the
-   Beacon link docked in the footer sit outside .header-bar, so the same tokens are declared
-   on them too: without that they read the kit's :root magenta and every footer ring was pink. */
+   The second line is the README's too: it hands the same tokens to the Footer Kit's pieces
+   (the footer, the back-to-top button, a disclaimer dialog) and the Beacon link, which sit
+   outside .header-bar. The kits resolve their accent, borders and focus ring on those pieces,
+   so nothing else is needed for the footer to wear the teal. */
 html:not([data-theme]) .header-bar[data-header-skin="custom"],
-html:not([data-theme]) .neo-footer,
-html:not([data-theme]) .neo-top,
-html:not([data-theme]) .neo-beacon-link,
-html:not([data-theme]) .neo-modal {
+html:not([data-theme]) :is(.neo-footer, .neo-top, .neo-modal, .neo-beacon-link) {
   --header-bg-start: #0f766e;
   --header-bg-mid: #073b38;
   --header-bg-end: #040714;
@@ -609,18 +607,4 @@ html:not([data-theme]) .neo-modal {
   --header-menu-hover: rgba(94, 234, 212, .14);
   --header-edge-from: rgba(94, 234, 212, .2);
   --header-focus: #2dd4bf;   /* the gear's ring matches the sheet's teal rings */
-}
-/* The Footer Kit resolves its --footer-* tokens from --header-* once, on :root, so they are
-   resolved again where the skin's tokens above now reach. Tokens only, no .neo-footer layout. */
-html:not([data-theme]) .neo-footer,
-html:not([data-theme]) .neo-top,
-html:not([data-theme]) .neo-beacon-link,
-html:not([data-theme]) .neo-modal {
-  --footer-accent: var(--header-accent);
-  --footer-border: var(--header-border);
-  --footer-border-strong: var(--header-border-strong);
-  --footer-hover: var(--header-menu-hover);
-  --beacon-focus: var(--header-focus);     /* the Beacon Kit's link, docked in the footer */
-  --beacon-border: var(--header-border);
-  --beacon-surface: var(--header-menu-bg);
 }
